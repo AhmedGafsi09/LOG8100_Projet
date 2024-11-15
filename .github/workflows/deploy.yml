@@ -10,51 +10,57 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # Checkout the repository code
+    # Step 1: Checkout the repository code
     - name: Checkout Code
       uses: actions/checkout@v3
 
-    # Set up Terraform
+    # Step 2: Set up Terraform
     - name: Set up Terraform
       uses: hashicorp/setup-terraform@v2
       with:
         terraform_version: 1.5.7
 
-    # Set up Kubeconfig
+    # Step 3: Set up Kubeconfig
     - name: Set up Kubeconfig
       run: |
         mkdir -p ~/.kube
         echo "${{ secrets.KUBECONFIG_CONTENT }}" > ~/.kube/config
         export KUBECONFIG=~/.kube/config
-        
-    # Ensure kubectl uses the correct KUBECONFIG
-    - name: Verify Kubeconfig
+
+    # Step 4: Verify Kubeconfig and Cluster Connection
+    - name: Verify Kubeconfig and Cluster Connection
       run: |
         kubectl config view
-        kubectl get nodes  # Check if cluster is accessible
+        kubectl get nodes
 
-    # Initialize and apply Terraform configuration
+    # Step 5: Initialize and Apply Terraform Configuration
     - name: Terraform Init and Apply
       run: |
         cd WebGoat-main/terraform
         terraform init
         terraform apply -auto-approve
 
-    # Set up kubectl
+    # Step 6: Set up Kubectl
     - name: Set up Kubectl
       uses: azure/setup-kubectl@v3
       with:
-        version: 'v1.31.2'  # Ensure this matches your cluster version
+        version: 'v1.31.2' 
 
-    # Deploy to Kubernetes
+    # Step 7: Deploy Kubernetes Manifests
     - name: Deploy to Kubernetes
       run: |
         kubectl apply -f WebGoat-main/kubernetes/deployment.yml
         kubectl apply -f WebGoat-main/kubernetes/service.yml
 
-    # Run security tests using Trivy
+    # Step 8: Run Security Tests with Trivy
     - name: Run Security Tests
       uses: aquasecurity/trivy-action@master
       with:
         scan-type: fs
         severity: HIGH,CRITICAL
+
+    # Step 9: Verify Deployment Status
+    - name: Verify Deployment
+      run: |
+        kubectl rollout status deployment webgoat-app -n webgoat
+        kubectl get all -n webgoat
