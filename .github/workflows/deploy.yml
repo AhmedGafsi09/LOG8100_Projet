@@ -1,67 +1,64 @@
 name: CI/CD Pipeline
-
 on:
-  push:
-    branches:
-      - main
-
+ push:
+   branches:
+     - main
 jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-    # Step 1: Checkout the repository code
-    - name: Checkout Code
-      uses: actions/checkout@v3
-
-    # Step 2: Set up Terraform
-    - name: Set up Terraform
-      uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: 1.5.7
-
-    # Step 3: Set up Kubeconfig
-    - name: Set up Kubeconfig
-      run: |
-        mkdir -p ~/.kube
-        echo "${{ secrets.KUBECONFIG_CONTENT }}" > ~/.kube/config
-        kubectl config use-context LOG8100_Projet
-        export KUBECONFIG=~/.kube/config
-
-    # Step 4: Verify Kubeconfig and Cluster Connection
-    - name: Verify Kubeconfig and Cluster Connection
-      run: |
-        kubectl config view
-        kubectl get nodes
-
-    # Step 5: Initialize and Apply Terraform Configuration
-    - name: Terraform Init and Apply
-      run: |
-        cd WebGoat-main/terraform
-        terraform init
-        terraform apply -auto-approve
-
-    # Step 6: Set up Kubectl
-    - name: Set up Kubectl
-      uses: azure/setup-kubectl@v3
-      with:
-        version: 'v1.31.2' 
-
-    # Step 7: Deploy Kubernetes Manifests
-    - name: Deploy to Kubernetes
-      run: |
-        kubectl apply -f WebGoat-main/kubernetes/deployment.yml
-        kubectl apply -f WebGoat-main/kubernetes/service.yml
-
-    # Step 8: Run Security Tests with Trivy
-    - name: Run Security Tests
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: fs
-        severity: HIGH,CRITICAL
-
-    # Step 9: Verify Deployment Status
-    - name: Verify Deployment
-      run: |
-        kubectl rollout status deployment webgoat-app -n webgoat
-        kubectl get all -n webgoat
+ build-and-deploy:
+   runs-on: ubuntu-latest
+   steps:
+   # Step 1: Checkout the repository code
+   - name: Checkout Code
+     uses: actions/checkout@v3
+   
+   # Step 2: Set up Terraform
+   - name: Set up Terraform
+     uses: hashicorp/setup-terraform@v2
+     with:
+       terraform_version: 1.5.7
+   
+   # Step 3: Set up Kubeconfig
+   - name: Set up Kubeconfig
+     run: |
+       mkdir -p ~/.kube
+       echo "${{ secrets.KUBECONFIG_CONTENT }}" > ~/.kube/config
+       kubectl config use-context kind-local-cluster
+       export KUBECONFIG=~/.kube/config
+   
+   # Step 4: Verify Kubeconfig and Cluster Connection
+   - name: Verify Kubeconfig and Cluster Connection
+     run: |
+       kubectl config view
+       kubectl get nodes
+   
+   # Step 5: Initialize and Apply Terraform Configuration  
+   - name: Terraform Init and Apply
+     run: |
+       cd WebGoat-main/terraform
+       terraform init
+       terraform apply -auto-approve
+   
+   # Step 6: Set up Kubectl
+   - name: Set up Kubectl
+     uses: azure/setup-kubectl@v3
+     with:
+       version: 'v1.28.2'
+   
+   # Step 7: Deploy Kubernetes Manifests
+   - name: Deploy to Kubernetes
+     run: |
+       kubectl apply -f WebGoat-main/kubernetes/deployment.yml
+       kubectl apply -f WebGoat-main/kubernetes/service.yml
+   
+   # Step 8: Run Security Tests with Trivy
+   - name: Run Security Tests
+     uses: aquasecurity/trivy-action@master
+     with:
+       scan-type: fs
+       severity: HIGH,CRITICAL
+   
+   # Step 9: Verify Deployment Status
+   - name: Verify Deployment
+     run: |
+       kubectl rollout status deployment webgoat-app -n webgoat
+       kubectl get all -n webgoat
