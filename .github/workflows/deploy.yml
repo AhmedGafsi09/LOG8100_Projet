@@ -25,6 +25,7 @@ jobs:
       run: |
         mkdir -p ~/.kube
         echo "${{ secrets.KUBECONFIG_CONTENT }}" > ~/.kube/config
+        kubectl config use-context LOG8100_Projet
         export KUBECONFIG=~/.kube/config
 
     # Step 4: Verify Kubeconfig and Cluster Connection
