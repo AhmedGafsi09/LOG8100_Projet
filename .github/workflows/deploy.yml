@@ -1,65 +1,72 @@
 name: CI/CD Pipeline
 on:
- push:
-   branches:
-     - main
-jobs:
- build-and-deploy:
-   runs-on: ubuntu-latest
-   steps:
-   - name: Checkout Code
-     uses: actions/checkout@v3
-   
-   - name: Set up Terraform
-     uses: hashicorp/setup-terraform@v2
-     with:
-       terraform_version: 1.5.7
-   
-   - name: Set up ngrok
-     run: |
-       wget https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
-       tar xvzf ngrok-v3-stable-linux-amd64.tgz
-       ./ngrok authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
-       ./ngrok http http://localhost:8080 &
-       sleep 10
-       NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
-       echo "NGROK_URL=$NGROK_URL" >> $GITHUB_ENV
+  push:
+    branches:
+      - main
 
-   - name: Set up Kubeconfig
-     run: |
-       mkdir -p ~/.kube
-       echo "${{ secrets.KUBECONFIG_CONTENT }}" > ~/.kube/config
-       kubectl config use-context kind-local-cluster
-       export KUBECONFIG=~/.kube/config
-   
-   - name: Verify Kubeconfig and Cluster Connection
-     run: |
-       kubectl config view
-       kubectl get nodes
-   
-   - name: Terraform Init and Apply
-     run: |
-       cd WebGoat-main/terraform
-       terraform init
-       terraform apply -auto-approve
-   
-   - name: Set up Kubectl
-     uses: azure/setup-kubectl@v3
-     with:
-       version: 'v1.28.2'
-   
-   - name: Deploy to Kubernetes
-     run: |
-       kubectl apply -f WebGoat-main/kubernetes/deployment.yml
-       kubectl apply -f WebGoat-main/kubernetes/service.yml
-   
-   - name: Run Security Tests
-     uses: aquasecurity/trivy-action@master
-     with:
-       scan-type: fs
-       severity: HIGH,CRITICAL
-   
-   - name: Verify Deployment
-     run: |
-       kubectl rollout status deployment webgoat-app -n webgoat
-       kubectl get all -n webgoat
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.7
+      
+      - name: Set up ngrok
+        run: |
+          curl -Lo ngrok.zip https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.zip
+          unzip ngrok.zip
+          ./ngrok authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+          ./ngrok start --all &
+          sleep 10
+          
+      - name: Create ngrok tunnel configuration
+        run: |
+          echo "version: 2" > ngrok.yml
+          echo "tunnels:" >> ngrok.yml
+          echo "  webgoat:" >> ngrok.yml
+          echo "    proto: http" >> ngrok.yml
+          echo "    addr: 8080" >> ngrok.yml
+      
+      - name: Set up Kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_CONTENT }}" > ~/.kube/config
+          kubectl config use-context kind-local-cluster
+          export KUBECONFIG=~/.kube/config
+      
+      - name: Verify Kubeconfig and Cluster Connection
+        run: |
+          kubectl config view
+          kubectl get nodes
+      
+      - name: Terraform Init and Apply
+        run: |
+          cd WebGoat-main/terraform
+          terraform init
+          terraform apply -auto-approve
+      
+      - name: Set up Kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.2'
+      
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f WebGoat-main/kubernetes/deployment.yml
+          kubectl apply -f WebGoat-main/kubernetes/service.yml
+      
+      - name: Run Security Tests
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          severity: HIGH,CRITICAL
+      
+      - name: Verify Deployment
+        run: |
+          kubectl rollout status deployment webgoat-app -n webgoat
+          kubectl get all -n webgoat
