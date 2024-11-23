@@ -1,4 +1,5 @@
-name: Build and Security Scan
+name: Build, Security Scan, and Code Analysis
+
 on:
   push:
     branches:
@@ -37,6 +38,32 @@ jobs:
           skip-files: 'home/webgoat/webgoat.jar'
           skip-java-db-update: 'true'
           scanners: 'vuln'
+
+  sonarqube-analysis:
+    name: SonarQube Code Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v3
+        with:
+          java-version: 21
+          distribution: 'temurin'
+
+      - name: Run SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=LOG8100_Projet
+            -Dsonar.projectName=WebGoat
+            -Dsonar.branch.name=main
+            -Dsonar.sources=WebGoat-main/src
+            -Dsonar.java.binaries=WebGoat-main/target/classes
 
   deploy:
     needs: container-scan
