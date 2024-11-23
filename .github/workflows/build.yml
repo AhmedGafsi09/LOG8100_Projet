@@ -3,8 +3,8 @@ name: Build and Analyze with SonarQube
 on:
   push:
     branches:
-      - main  # Scanner automatiquement à chaque push sur main
-  workflow_dispatch:  # Permet de déclencher le workflow manuellement
+      - main
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,7 +16,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Important pour une analyse complète (évite les clones superficiels)
+          fetch-depth: 0
 
       # Étape 2 : Vérifiez la structure du projet
       - name: Debug repository structure
@@ -24,12 +24,12 @@ jobs:
           pwd
           ls -R
 
-      # Étape 3 : Compilez le code Java (si applicable)
+      # Étape 3 : Compilez le code Java
       - name: Compile Java code with Maven
         run: |
-          mvn -f path/to/your/java/project/pom.xml clean compile
+          mvn -f path/to/your/real/pom.xml clean compile
 
-      # Étape 4 : Configurer SonarQube pour analyser le projet
+      # Étape 4 : Analyse SonarQube
       - name: Run SonarQube Scan
         uses: sonarsource/sonarqube-scan-action@master
         env:
@@ -38,7 +38,7 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=WebGoat
-            -Dsonar.java.binaries=path/to/your/java/project/target/classes
+            -Dsonar.java.binaries=target/classes
             -Dsonar.branch.name=main
 
       # Étape 5 : Vérifier le Quality Gate (optionnel)
