@@ -18,16 +18,28 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Étape 2 : Installer Docker et préparer l'environnement
+      # Étape 2 : Installer Java et Maven
+      - name: Set up Java and Maven
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # Étape 3 : Compiler le projet et générer le fichier jar
+      - name: Build Project with Maven
+        run: mvn clean package
+        working-directory: ./WebGoat-main
+
+      # Étape 4 : Configurer Docker
       - name: Set up Docker
         uses: docker/setup-buildx-action@v2
 
-      # Étape 3 : Construire l'image Docker
+      # Étape 5 : Construire l'image Docker
       - name: Build Docker Image
         run: |
           docker build -t webgoat:latest ./WebGoat-main
 
-      # Étape 4 : Scanner l'image Docker avec Trivy
+      # Étape 6 : Scanner l'image Docker avec Trivy
       - name: Scan Docker Image with Trivy
         uses: aquasecurity/trivy-action@master
         with:
@@ -35,12 +47,3 @@ jobs:
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-
-      # Étape 5 : Scanner l'image Docker avec Docker Scout (optionnel)
-      - name: Install Docker Scout (Optional)
-        run: |
-          curl -fsSL https://github.com/docker/scout-cli/releases/latest/download/install.sh | sh
-
-      - name: Analyze with Docker Scout (Optional)
-        run: |
-          docker scout cves webgoat:latest
