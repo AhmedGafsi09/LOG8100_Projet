@@ -1,38 +1,43 @@
-name: Build and Analyze Docker Image
+name: Build and Analyze with SonarQube and Trivy
 
 on:
   push:
     branches:
       - main
-  pull_request:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # Étape 1 : Cloner le dépôt
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      # Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      # Étape 2 : Configurer Java et Maven
-      - name: Set up JDK 17 with Maven
+      # Debug workspace
+      - name: Debug workspace
+        run: ls -R
+
+      # Set up JDK 21
+      - name: Set up JDK 21
         uses: actions/setup-java@v3
         with:
-          java-version: '17'       # Vous pouvez utiliser une version compatible avec votre projet
-          distribution: 'temurin'  # Options disponibles : 'temurin', 'zulu', 'adopt', etc.
-          cache: 'maven'           # Active le cache Maven
+          distribution: 'temurin'
+          java-version: '21'
 
-      # Étape 3 : Compiler le projet Maven
+      # Build with Maven
       - name: Build with Maven
-        run: mvn clean package
+        run: mvn -f ./WebGoat-main/pom.xml clean package
 
-      # Étape 4 : Construire l'image Docker
+      # Build Docker Image
       - name: Build Docker Image
         run: docker build -t webgoat:latest ./WebGoat-main
 
-      # Étape 5 : Scanner l'image Docker avec Trivy
-      - name: Scan Docker Image for Vulnerabilities
+      # Scan Docker Image with Trivy
+      - name: Scan Docker Image with Trivy
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: webgoat:latest
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
