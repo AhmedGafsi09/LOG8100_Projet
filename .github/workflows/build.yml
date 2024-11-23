@@ -17,7 +17,7 @@ jobs:
         uses: actions/setup-java@v3
         with:
           java-version: 21
-          distribution: 'temurin'  # Eclipse Temurin, compatible avec SonarQube et Maven
+          distribution: 'temurin'
 
       # Étape 2 : Cloner le dépôt
       - name: Checkout repository
@@ -25,18 +25,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Étape 3 : Debugger la structure du projet
-      - name: Debug repository structure
-        run: |
-          pwd
-          ls -R
-
-      # Étape 4 : Compiler le code Java
+      # Étape 3 : Compiler le code Java
       - name: Compile Java code with Maven
         run: |
           mvn -f WebGoat-main/pom.xml clean compile
 
-      # Étape 5 : Exécuter SonarQube
+      # Étape 4 : Exécuter SonarQube
       - name: Run SonarQube Scan
         uses: sonarsource/sonarqube-scan-action@master
         env:
@@ -46,9 +40,8 @@ jobs:
           args: >
             -Dsonar.projectKey=WebGoat
             -Dsonar.java.binaries=WebGoat-main/target/classes
-            -Dsonar.branch.name=main
 
-      # Étape 6 : Vérifier le Quality Gate
+      # Étape 5 : Vérifier le Quality Gate
       - name: Check Quality Gate
         uses: sonarsource/sonarqube-quality-gate-action@master
         env:
