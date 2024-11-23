@@ -16,20 +16,21 @@ jobs:
         repository: 'AhmedGafsi09/LOG8100_Projet'
         path: 'LOG8100_Projet'
 
-    - name: Debug directory structure
-      run: |
-        pwd
-        ls -la
-        ls -la LOG8100_Projet
-
-    - name: Verify ansible folder
-      run: |
-        ls -la LOG8100_Projet/WebGoat-main/ansible
-
-    - name: Install Ansible
+    - name: Install Prerequisites
       run: |
         sudo apt-get update
-        sudo apt-get install -y ansible
+        sudo apt-get install -y ansible kubectl
+
+    - name: Start Minikube
+      run: |
+        minikube start --driver=docker
+        minikube status
+        kubectl get nodes
+
+    - name: Set Minikube Context
+      run: |
+        minikube update-context
+        kubectl cluster-info
 
     - name: Run Ansible Playbook
       run: |
@@ -37,18 +38,6 @@ jobs:
         ansible-playbook -i inventory.yml site.yml
       env:
         ANSIBLE_HOST_KEY_CHECKING: false
-
-    - name: Deploy Infrastructure
-      run: |
-        cd LOG8100_Projet/WebGoat-main/terraform
-        terraform init
-        terraform apply -auto-approve
-
-    - name: Deploy Application
-      run: |
-        cd LOG8100_Projet/WebGoat-main/kubernetes
-        kubectl apply -f deployment.yml
-        kubectl apply -f service.yml
 
     - name: Verify Deployment
       run: |
@@ -60,4 +49,4 @@ jobs:
       if: always()
       run: |
         kubectl get all -A
-        kubectl describe pods -n webgoat
+        kubectl describe nodes
