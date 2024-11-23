@@ -1,5 +1,4 @@
-name: Deploy WebGoat
-
+name: WebGoat CI/CD Pipeline
 on:
   push:
     branches:
@@ -7,46 +6,106 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  security-analysis:
+    name: Security Analysis
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v3
-      with:
-        repository: 'AhmedGafsi09/LOG8100_Projet'
-        path: 'LOG8100_Projet'
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: 'AhmedGafsi09/LOG8100_Projet'
+          path: 'LOG8100_Projet'
 
-    - name: Install Prerequisites
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ansible kubectl
+      - name: Set up Java 21
+        uses: actions/setup-java@v3
+        with:
+          java-version: 21
+          distribution: 'temurin'
 
-    - name: Start Minikube
-      run: |
-        minikube start --driver=docker
-        minikube status
-        kubectl get nodes
+      - name: Build with Maven
+        run: |
+          cd LOG8100_Projet/WebGoat-main
+          mvn clean compile
 
-    - name: Set Minikube Context
-      run: |
-        minikube update-context
-        kubectl cluster-info
+      - name: Run SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=WebGoat
+            -Dsonar.java.binaries=LOG8100_Projet/WebGoat-main/target/classes
 
-    - name: Run Ansible Playbook
-      run: |
-        cd LOG8100_Projet/WebGoat-main/ansible
-        ansible-playbook -i inventory.yml site.yml
-      env:
-        ANSIBLE_HOST_KEY_CHECKING: false
+      - name: Check Quality Gate
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-    - name: Verify Deployment
-      run: |
-        kubectl get pods -n webgoat
-        kubectl get services -n webgoat
-        minikube service list
+      - name: Build Docker Image
+        run: |
+          cd LOG8100_Projet/WebGoat-main
+          docker build -t webgoat:latest .
 
-    - name: Debug Info
-      if: always()
-      run: |
-        kubectl get all -A
-        kubectl describe nodes
+      - name: Scan Docker Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: webgoat:latest
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+  deploy:
+    needs: security-analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          repository: 'AhmedGafsi09/LOG8100_Projet'
+          path: 'LOG8100_Projet'
+
+      - name: Install Prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible kubectl
+
+      - name: Start Minikube
+        run: |
+          minikube start --driver=docker
+          minikube status
+          kubectl get nodes
+
+      - name: Set Minikube Context
+        run: |
+          minikube update-context
+          kubectl cluster-info
+
+      - name: Run Ansible Playbook
+        run: |
+          cd LOG8100_Projet/WebGoat-main/ansible
+          ansible-playbook -i inventory.yml site.yml
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: false
+
+      - name: Verify Deployment
+        run: |
+          kubectl get pods -n webgoat
+          kubectl get services -n webgoat
+          minikube service list
+
+      - name: Debug Info
+        if: always()
+        run: |
+          kubectl get all -A
+          kubectl describe nodes
+
+      - name: Upload Logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-logs
+          path: |
+            minikube.log
+            ~/.kube/config
+            LOG8100_Projet/WebGoat-main/ansible/*.log
