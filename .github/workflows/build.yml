@@ -29,6 +29,7 @@ jobs:
             -Dsonar.projectKey=LOG8100_Projet
             -Dsonar.branch.name=main
 
+
       # Étape 3 : Vérifier le Quality Gate (optionnel)
       - name: Check Quality Gate
         uses: sonarsource/sonarqube-quality-gate-action@master
