@@ -18,7 +18,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Étape 2 : Vérifiez la structure du projet
+      # Étape 2 : Vérifiez la structure du dépôt
       - name: Debug repository structure
         run: |
           pwd
@@ -27,7 +27,7 @@ jobs:
       # Étape 3 : Compilez le code Java
       - name: Compile Java code with Maven
         run: |
-          mvn -f path/to/your/real/pom.xml clean compile
+          mvn -f WebGoat-main/pom.xml clean compile
 
       # Étape 4 : Analyse SonarQube
       - name: Run SonarQube Scan
@@ -38,10 +38,10 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=WebGoat
-            -Dsonar.java.binaries=target/classes
+            -Dsonar.java.binaries=WebGoat-main/target/classes
             -Dsonar.branch.name=main
 
-      # Étape 5 : Vérifier le Quality Gate (optionnel)
+      # Étape 5 : Vérifiez le Quality Gate (optionnel)
       - name: Check Quality Gate
         uses: sonarsource/sonarqube-quality-gate-action@master
         env:
