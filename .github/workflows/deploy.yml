@@ -24,7 +24,7 @@ jobs:
 
     - name: Verify ansible folder
       run: |
-        ls -la LOG8100_Projet/ansible
+        ls -la LOG8100_Projet/WebGoat-main/ansible
 
     - name: Install Ansible
       run: |
@@ -33,7 +33,7 @@ jobs:
 
     - name: Run Ansible Playbook
       run: |
-        cd LOG8100_Projet/ansible
+        cd LOG8100_Projet/WebGoat-main/ansible
         ansible-playbook -i inventory.yml site.yml
       env:
         ANSIBLE_HOST_KEY_CHECKING: false
