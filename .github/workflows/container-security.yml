@@ -1,0 +1,46 @@
+name: Container Security Analysis
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  security-scan:
+    name: Scan Docker Image for Vulnerabilities
+    runs-on: ubuntu-latest
+
+    steps:
+      # Étape 1 : Cloner le dépôt
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Étape 2 : Installer Docker et préparer l'environnement
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v2
+
+      # Étape 3 : Construire l'image Docker
+      - name: Build Docker Image
+        run: |
+          docker build -t webgoat:latest ./WebGoat-main
+
+      # Étape 4 : Scanner l'image Docker avec Trivy
+      - name: Scan Docker Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: webgoat:latest
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      # Étape 5 : Scanner l'image Docker avec Docker Scout (optionnel)
+      - name: Install Docker Scout (Optional)
+        run: |
+          curl -fsSL https://github.com/docker/scout-cli/releases/latest/download/install.sh | sh
+
+      - name: Analyze with Docker Scout (Optional)
+        run: |
+          docker scout cves webgoat:latest
