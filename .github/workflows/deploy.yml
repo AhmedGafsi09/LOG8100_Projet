@@ -4,21 +4,14 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:  # Allows manual trigger
+  workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Code
       uses: actions/checkout@v3
-
-    - name: Set up JDK
-      uses: actions/setup-java@v3
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: 'maven'
 
     - name: Run Security Tests
       uses: aquasecurity/trivy-action@master
@@ -26,15 +19,13 @@ jobs:
         scan-type: fs
         severity: HIGH,CRITICAL
         ignore-unfixed: true
-        format: 'table'
-
 
     - name: Set up Kubeconfig
       run: |
         mkdir -p ~/.kube
         echo "${{ secrets.KUBECONFIG_CONTENT }}" > ~/.kube/config
         chmod 600 ~/.kube/config
-      
+
     - name: Verify Kubernetes Connection
       run: |
         kubectl cluster-info
@@ -45,39 +36,19 @@ jobs:
       with:
         terraform_version: 1.5.7
 
-    - name: Terraform Init and Apply
+    - name: Deploy Infrastructure
       run: |
         cd terraform
         terraform init
         terraform apply -auto-approve
 
-    - name: Deploy to Kubernetes
+    - name: Deploy Application
       run: |
         cd kubernetes
         kubectl apply -f deployment.yml
         kubectl apply -f service.yml
-        
-    - name: Debug Info
+
+    - name: Verify Deployment
       run: |
-        echo "Current directory contents:"
-        ls -la
-        echo "Terraform directory contents:"
-        ls -la terraform/
-        echo "Kubernetes directory contents:"
-        ls -la kubernetes/
-        echo "Kubernetes resources:"
-        kubectl get all -n webgoat
         kubectl get pods -n webgoat
         kubectl get services -n webgoat
-        kubectl get deployments -n webgoat
-
-    - name: Wait for Deployment
-      run: |
-        kubectl wait --for=condition=available deployment/webgoat -n webgoat --timeout=300s
-        kubectl get pods -n webgoat -o wide
-
-    - name: Port Forward (Optional)
-      run: |
-        kubectl port-forward -n webgoat svc/webgoat-service 8080:8080 &
-        sleep 10
-        curl http://localhost:8080 || true
