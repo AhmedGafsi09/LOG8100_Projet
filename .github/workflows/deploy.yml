@@ -12,6 +12,15 @@ jobs:
     steps:
     - name: Checkout Code
       uses: actions/checkout@v3
+      with:
+        repository: 'AhmedGafsi09/LOG8100_Projet'
+        path: 'LOG8100_Projet'
+
+    - name: Debug directory
+      run: |
+        pwd
+        ls -la
+        ls -la LOG8100_Projet
 
     - name: Run Security Tests
       uses: aquasecurity/trivy-action@master
@@ -40,13 +49,15 @@ jobs:
 
     - name: Deploy Infrastructure
       run: |
-        cd terraform
+        cd LOG8100_Projet/WebGoat-main/terraform
+        pwd
+        ls -la
         terraform init
         terraform apply -auto-approve
 
     - name: Deploy Application
       run: |
-        cd kubernetes
+        cd LOG8100_Projet/WebGoat-main/kubernetes
         kubectl apply -f deployment.yml
         kubectl apply -f service.yml
 
