@@ -1,4 +1,4 @@
-name: WebGoat CI/CD Pipeline
+name: Build, Analyze and Scan Security
 on:
   push:
     branches:
@@ -7,25 +7,23 @@ on:
 
 jobs:
   security-analysis:
-    name: Security Analysis
+    name: SonarQube Analysis
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          repository: 'AhmedGafsi09/LOG8100_Projet'
-          path: 'LOG8100_Projet'
-
       - name: Set up Java 21
         uses: actions/setup-java@v3
         with:
           java-version: 21
           distribution: 'temurin'
 
-      - name: Build with Maven
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compile Java code with Maven
         run: |
-          cd LOG8100_Projet/WebGoat-main
-          mvn clean compile
+          mvn -f WebGoat-main/pom.xml clean compile
 
       - name: Run SonarQube Scan
         uses: sonarsource/sonarqube-scan-action@master
@@ -35,17 +33,23 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=WebGoat
-            -Dsonar.java.binaries=LOG8100_Projet/WebGoat-main/target/classes
+            -Dsonar.java.binaries=WebGoat-main/target/classes
 
       - name: Check Quality Gate
         uses: sonarsource/sonarqube-quality-gate-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+  container-scan:
+    needs: security-analysis
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
       - name: Build Docker Image
-        run: |
-          cd LOG8100_Projet/WebGoat-main
-          docker build -t webgoat:latest .
+        run: docker build -t webgoat:latest ./WebGoat-main
 
       - name: Scan Docker Image with Trivy
         uses: aquasecurity/trivy-action@master
@@ -56,7 +60,7 @@ jobs:
           ignore-unfixed: true
 
   deploy:
-    needs: security-analysis
+    needs: [security-analysis, container-scan]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -99,13 +103,3 @@ jobs:
         run: |
           kubectl get all -A
           kubectl describe nodes
-
-      - name: Upload Logs
-        if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: deployment-logs
-          path: |
-            minikube.log
-            ~/.kube/config
-            LOG8100_Projet/WebGoat-main/ansible/*.log
