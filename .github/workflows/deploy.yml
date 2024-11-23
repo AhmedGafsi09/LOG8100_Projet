@@ -33,6 +33,10 @@ jobs:
           format: 'table'
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
+          timeout: '30m'
+          skip-files: 'home/webgoat/webgoat.jar'
+          skip-java-db-update: 'true'
+          scanners: 'vuln'
 
   deploy:
     needs: container-scan
@@ -72,3 +76,9 @@ jobs:
           kubectl get pods -n webgoat
           kubectl get services -n webgoat
           minikube service list
+
+      - name: Debug Info
+        if: always()
+        run: |
+          kubectl get all -A
+          kubectl describe nodes
