@@ -20,16 +20,22 @@ jobs:
         severity: HIGH,CRITICAL
         ignore-unfixed: true
 
-    - name: Set up Kubeconfig
+    - name: Debug current context
       run: |
-        mkdir -p ~/.kube
-        echo "${{ secrets.KUBECONFIG_CONTENT }}" > ~/.kube/config
-        chmod 600 ~/.kube/config
+        pwd
+        ls -la
 
-    - name: Verify Kubernetes Connection
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+
+    - name: Configure kubectl
       run: |
-        kubectl cluster-info
-        kubectl get nodes
+        echo "${{ secrets.KUBECONFIG }}" > kubeconfig.yaml
+        KUBECONFIG=kubeconfig.yaml kubectl config view
+        KUBECONFIG=kubeconfig.yaml kubectl cluster-info
+        KUBECONFIG=kubeconfig.yaml kubectl get nodes
 
     - name: Set up Terraform
       uses: hashicorp/setup-terraform@v2
@@ -43,12 +49,16 @@ jobs:
         terraform apply -auto-approve
 
     - name: Deploy Application
+      env:
+        KUBECONFIG: kubeconfig.yaml
       run: |
         cd kubernetes
         kubectl apply -f deployment.yml
         kubectl apply -f service.yml
 
     - name: Verify Deployment
+      env:
+        KUBECONFIG: kubeconfig.yaml
       run: |
         kubectl get pods -n webgoat
         kubectl get services -n webgoat
