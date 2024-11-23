@@ -67,6 +67,7 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=WebGoat
+            -Dsonar.projectName=WebGoat
             -Dsonar.java.binaries=WebGoat-main/target/classes
 
       - name: Check Quality Gate
