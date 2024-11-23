@@ -1,0 +1,51 @@
+---
+- name: Configure Kubernetes Cluster
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Verify Kubernetes cluster is running
+      command: kubectl cluster-info
+      register: cluster_info
+      changed_when: false
+
+    - name: Create WebGoat namespace
+      command: kubectl create namespace webgoat
+      ignore_errors: true
+
+    - name: Apply resource quota
+      command: kubectl apply -f manifests/resource-quota.yml
+      args:
+        chdir: "{{ playbook_dir }}"
+
+    - name: Verify resources
+      command: kubectl get quota -n webgoat
+      register: quota_status
+      changed_when: false
+
+    - name: Display quota status
+      debug:
+        var: quota_status.stdout_lines
+
+    - name: Apply network policy
+      command: kubectl apply -f manifests/network-policy.yml
+      args:
+        chdir: "{{ playbook_dir }}"
+
+    # Nouvelles tâches ajoutées ici
+    - name: Check all resources in namespace
+      command: kubectl get all -n webgoat
+      register: resources_status
+      changed_when: false
+
+    - name: Display resources status
+      debug:
+        var: resources_status.stdout_lines
+
+    - name: Check network policies
+      command: kubectl get networkpolicies -n webgoat
+      register: netpol_status
+      changed_when: false
+
+    - name: Display network policies status
+      debug:
+        var: netpol_status.stdout_lines
