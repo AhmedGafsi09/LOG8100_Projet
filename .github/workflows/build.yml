@@ -27,6 +27,6 @@ jobs:
 
       - name: Quality Gate Check (Optional)
         if: success()  # Exécute uniquement si l'analyse réussit
-        uses: sonarsource/sonarqube-quality-gate-action@main
+        uses: sonarsource/sonarqube-quality-gate-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
