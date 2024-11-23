@@ -1,26 +1,36 @@
-name: Build
+name: Build and Analyze with SonarQube
 
 on:
   push:
     branches:
-      - main
+      - main  # Scanner automatiquement à chaque push sur main
+  workflow_dispatch:  # Permet de déclencher le workflow manuellement
 
 jobs:
   build:
-    name: Build and analyze
+    name: SonarQube Analysis
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      # Étape 1 : Cloner le dépôt
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # Important pour une analyse complète (évite les clones superficiels)
 
-      - uses: sonarsource/sonarqube-scan-action@master
+      # Étape 2 : Configurer SonarQube pour analyser le projet
+      - name: Run SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=LOG8100_Projet
+            -Dsonar.branch.name=main
 
-      - uses: sonarsource/sonarqube-quality-gate-action@master
-        timeout-minutes: 5
+      # Étape 3 : Vérifier le Quality Gate (optionnel)
+      - name: Check Quality Gate
+        uses: sonarsource/sonarqube-quality-gate-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
