@@ -1,0 +1,10 @@
+
+- name: Verify Docker installation
+  command: docker --version
+  register: docker_version
+  changed_when: false
+
+- name: Check Docker daemon
+  command: docker info
+  register: docker_info
+  changed_when: false

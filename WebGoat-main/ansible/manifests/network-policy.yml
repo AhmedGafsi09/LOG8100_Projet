@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: webgoat-network-policy
+  namespace: webgoat
+spec:
+  podSelector:
+    matchLabels:
+      app: webgoat
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: webgoat
+      ports:
+        - protocol: TCP
+          port: 8080

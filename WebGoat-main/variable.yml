@@ -1,0 +1,14 @@
+prometheus:
+  prometheusSpec:
+    scrapeInterval: 15s
+    additionalScrapeConfigs:
+      - job_name: 'kube-state-metrics'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['kube-system']
+        metrics_path: '/metrics'
+        scheme: http
+
+kube-state-metrics:
+  enabled: true

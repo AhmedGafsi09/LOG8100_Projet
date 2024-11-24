@@ -1,0 +1,14 @@
+---
+- name: Verify Kubernetes installation
+  command: kubectl version --client
+  register: kubectl_version
+  changed_when: false
+
+- name: Verify cluster access
+  command: kubectl cluster-info
+  register: cluster_info
+  changed_when: false
+
+- name: Create WebGoat namespace
+  command: kubectl create namespace webgoat
+  ignore_errors: true

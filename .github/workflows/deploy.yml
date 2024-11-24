@@ -1,72 +1,137 @@
+name: Build, Security Scan, and Code Analysis
+
 name: CI/CD Pipeline
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  container-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v3
+        with:
+          java-version: 21
+          distribution: 'temurin'
+
+      - name: Build with Maven
+        run: |
+          mvn -f WebGoat-main/pom.xml clean package -DskipTests
+
+      - name: Build Docker Image
+        run: docker build -t webgoat:latest ./WebGoat-main
+
+      - name: Scan Docker Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: webgoat:latest
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          timeout: '30m'
+          skip-files: 'home/webgoat/webgoat.jar'
+          skip-java-db-update: 'true'
+          scanners: 'vuln'
+
+  code-analysis:
+    name: SonarQube Code Analysis
+    needs: container-scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v3
+        with:
+          java-version: 21
+          distribution: 'temurin'
+
+      - name: Compile Java code with Maven
+        run: |
+          mvn -f WebGoat-main/pom.xml clean compile
+
+      - name: Run SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=WebGoat
+            -Dsonar.projectName=WebGoat
+            -Dsonar.java.binaries=WebGoat-main/target/classes
+
+      - name: Check Quality Gate
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        continue-on-error: true
+
+  deploy:
+    needs: [container-scan, code-analysis]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
-      
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.5.7
-      
-      - name: Set up ngrok
+          repository: 'AhmedGafsi09/LOG8100_Projet'
+          path: 'LOG8100_Projet'
+
+      - name: Install Prerequisites
         run: |
-          curl -Lo ngrok.zip https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.zip
-          unzip ngrok.zip
-          ./ngrok authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
-          ./ngrok start --all &
-          sleep 10
-          
-      - name: Create ngrok tunnel configuration
+          sudo apt-get update
+          sudo apt-get install -y ansible kubectl
+
+      - name: Start Minikube
         run: |
-          echo "version: 2" > ngrok.yml
-          echo "tunnels:" >> ngrok.yml
-          echo "  webgoat:" >> ngrok.yml
-          echo "    proto: http" >> ngrok.yml
-          echo "    addr: 8080" >> ngrok.yml
-      
-      - name: Set up Kubeconfig
-        run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG_CONTENT }}" > ~/.kube/config
-          kubectl config use-context kind-local-cluster
-          export KUBECONFIG=~/.kube/config
-      
-      - name: Verify Kubeconfig and Cluster Connection
-        run: |
-          kubectl config view
+          minikube start --driver=docker
+          minikube status
           kubectl get nodes
-      
-      - name: Terraform Init and Apply
+
+      - name: Set Minikube Context
         run: |
-          cd WebGoat-main/terraform
-          terraform init
-          terraform apply -auto-approve
-      
-      - name: Set up Kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: 'v1.28.2'
-      
-      - name: Deploy to Kubernetes
+          minikube update-context
+          kubectl cluster-info
+
+      - name: Run Ansible Playbook
         run: |
-          kubectl apply -f WebGoat-main/kubernetes/deployment.yml
-          kubectl apply -f WebGoat-main/kubernetes/service.yml
-      
-      - name: Run Security Tests
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: fs
-          severity: HIGH,CRITICAL
-      
+          cd LOG8100_Projet/WebGoat-main/ansible
+          ansible-playbook -i inventory.yml site.yml
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: false
+
       - name: Verify Deployment
         run: |
-          kubectl rollout status deployment webgoat-app -n webgoat
-          kubectl get all -n webgoat
+          kubectl get pods -n webgoat
+          kubectl get services -n webgoat
+          minikube service list
+
+      - name: Debug Info
+        if: always()
+        run: |
+          kubectl get all -A
+          kubectl describe nodes
+          
+      - name: Set up Helm
+        uses: Helm/setup-helm@v1
+        with:
+          version: 'v3.9.0'
+
+      - name: Add Prometheus Helm repo
+        run: helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+
+      - name: Update Helm repos
+        run: helm repo update
+
+      - name: Install Prometheus with custom values
+        run: helm install prometheus prometheus-community/kube-prometheus-stack -f k8s-config/values.yaml
