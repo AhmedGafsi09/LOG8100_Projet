@@ -68,12 +68,27 @@ jobs:
             -Dsonar.projectKey=WebGoat
             -Dsonar.projectName=WebGoat
             -Dsonar.java.binaries=WebGoat-main/target/classes
+            -Dsonar.scanner.dumpToFile=scanner-log.txt
+            -X  # Enable debug logging
+
+      - name: Retry Logic for SonarQube
+        if: failure()
+        run: |
+          echo "Retrying SonarQube Scan..."
+          sleep 10
+          mvn sonar:sonar \
+            -Dsonar.projectKey=WebGoat \
+            -Dsonar.projectName=WebGoat \
+            -Dsonar.java.binaries=WebGoat-main/target/classes \
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
 
       - name: Check Quality Gate
         uses: sonarsource/sonarqube-quality-gate-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         continue-on-error: true
+
 
       - name: Check for Critical Vulnerabilities and Send Discord Alert
         run: |
