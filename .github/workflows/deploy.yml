@@ -150,84 +150,22 @@ jobs:
             -n monitoring \
             -f prometheus-values.yaml
 
-- name: Wait for Monitoring Stack
+      - name: Wait for Monitoring Stack
         run: |
           echo "Waiting for components to be ready..."
           
-          # Wait for Prometheus Operator
           kubectl rollout status deployment/prometheus-kube-prometheus-operator -n monitoring --timeout=300s || true
-          
-          # Wait for Prometheus
-          kubectl rollout status statefulset/prometheus-kube-prom-prometheus -n monitoring --timeout=300s || true
-          
-          # Wait for Alertmanager
-          kubectl rollout status statefulset/alertmanager-prometheus-kube-prom-alertmanager -n monitoring --timeout=300s || true
-          
-          echo "Checking all resources in monitoring namespace..."
+          kubectl rollout status statefulset/prometheus-prometheus -n monitoring --timeout=300s || true
           kubectl get all -n monitoring
-
-      - name: Create NodePort Services
-        run: |
-          # Create NodePort service for Prometheus
-          cat > prometheus-nodeport.yaml << EOF
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: prometheus-nodeport
-            namespace: monitoring
-          spec:
-            type: NodePort
-            ports:
-              - port: 9090
-                targetPort: 9090
-                nodePort: 30090
-            selector:
-              app.kubernetes.io/name: prometheus
-              app.kubernetes.io/instance: prometheus-kube-prom-prometheus
-          EOF
-
-          kubectl apply -f prometheus-nodeport.yaml
 
       - name: Verify Services
         run: |
-          echo "Checking monitoring services..."
+          echo "Checking services..."
           kubectl get svc -n monitoring
-          
-          echo "Checking Prometheus pods..."
-          kubectl get pods -n monitoring -l app=prometheus
-          
-          echo "Checking Grafana pods..."
-          kubectl get pods -n monitoring -l app.kubernetes.io/instance=grafana
-          
-          echo "Service endpoints:"
-          minikube service list -n monitoring
 
       - name: Get Access Information
         run: |
-          # Get Grafana credentials
-          echo "Grafana admin credentials:"
-          echo "Username: admin"
-          echo "Password: $(kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode)"
-          
-          # Get service URLs
-          echo "Service URLs (available after port-forward):"
-          echo "Prometheus: http://localhost:30090"
-          echo "Grafana: http://localhost:30300"
-          
-          # Get pod status
-          echo "Pod Status:"
-          kubectl get pods -n monitoring
-
-      - name: Verify Access
-        run: |
-          GRAFANA_PASSWORD=$(kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode)
-          echo "Grafana admin password: $GRAFANA_PASSWORD"
-          echo "Prometheus: http://localhost:30090"
-          echo "Grafana: http://localhost:30300"
-          minikube service list -n monitoring
-
-      - name: Debug Info
-        if: always()
-        run: |
-          kubectl get all -A
-          kubectl describe nodes
+          echo "Prometheus URL: http://localhost:30090"
+          echo "Grafana URL: http://localhost:30300"
+          echo "Grafana credentials:"
+          echo "admin / $(kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode)"
