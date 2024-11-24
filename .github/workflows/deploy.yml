@@ -39,7 +39,7 @@ jobs:
           scanners: 'vuln'
 
   code-analysis:
-    name: SonarQube Code Analysis
+    name: SonarQube Analysis
     needs: container-scan
     runs-on: ubuntu-latest
     steps:
@@ -54,33 +54,41 @@ jobs:
           java-version: 21
           distribution: 'temurin'
 
-      - name: Compile Java code with Maven
-        run: |
-          mvn -f WebGoat-main/pom.xml clean compile
+      - name: Cache SonarQube packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
 
-      - name: Run SonarQube Scan
-        uses: sonarsource/sonarqube-scan-action@master
+      - name: Build and analyze
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-        with:
-          args: >
-            -Dsonar.projectKey=WebGoat
-            -Dsonar.projectName=WebGoat
-            -Dsonar.java.binaries=WebGoat-main/target/classes
+        run: |
+          cd WebGoat-main
+          mvn verify sonar:sonar \
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
+            -Dsonar.projectKey=WebGoat \
+            -Dsonar.projectName=WebGoat \
+            -Dsonar.java.binaries=target/classes
 
       - name: Check Quality Gate
-        uses: sonarsource/sonarqube-quality-gate-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        continue-on-error: true
-
-      - name: Check for Critical Vulnerabilities and Send Discord Alert
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         run: |
-          if [ "$(curl -s -X GET "https://sonarqube.example.com/api/issues/search?componentKeys=WebGoat&types=VULNERABILITY&severities=CRITICAL&resolved=false" | jq '.total')" -gt 0 ]; then
-            curl -X POST -H "Content-Type: application/json" \
-              -d '{"content": "A critical vulnerability has been detected in the WebGoat project!"}' \
+          sleep 5  # Allow time for SonarQube to process
+          QUALITY_GATE_STATUS=$(curl -s -u "${SONAR_TOKEN}:" "${SONAR_HOST_URL}/api/qualitygates/project_status?projectKey=WebGoat" | jq -r '.projectStatus.status')
+          echo "Quality Gate Status: $QUALITY_GATE_STATUS"
+          if [ "$QUALITY_GATE_STATUS" = "ERROR" ]; then
+            echo "Quality Gate failed!"
+            curl -X POST \
+              -H "Content-Type: application/json" \
+              -d "{\"content\": \"⚠️ SonarQube Quality Gate failed for WebGoat!\"}" \
               ${{ secrets.DISCORD_WEBHOOK_URL }}
+            exit 1
           fi
 
   deploy:
