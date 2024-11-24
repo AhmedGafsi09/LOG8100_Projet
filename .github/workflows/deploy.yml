@@ -74,15 +74,14 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         continue-on-error: true
+
       - name: Check for Critical Vulnerabilities and Send Discord Alert
         run: |
-          if [ "$(curl -s -X GET "https://sonarqube.example.com/api/issues/search?componentKeys=WebGoat&types=VULNERABILITY&severities=CRITICAL&resolved=false" | jq '.total' )" -gt 0 ]; then
+          if [ "$(curl -s -X GET "https://sonarqube.example.com/api/issues/search?componentKeys=WebGoat&types=VULNERABILITY&severities=CRITICAL&resolved=false" | jq '.total')" -gt 0 ]; then
             curl -X POST -H "Content-Type: application/json" \
-            -d '{"content": "A critical vulnerability has been detected in the WebGoat project!"}' \
-           https://discord.com/api/webhooks/1310078253767200788/eQM3uF7CWp0On2wrQqDYZAxYoNkYDdppCBU9BibbIL2ZkM-S67MJb9oDNglMOwqss-P0
-         fi
-
-
+              -d '{"content": "A critical vulnerability has been detected in the WebGoat project!"}' \
+              https://discord.com/api/webhooks/1310078253767200788/eQM3uF7CWp0On2wrQqDYZAxYoNkYDdppCBU9BibbIL2ZkM-S67MJb9oDNglMOwqss-P0
+          fi
 
   deploy:
     needs: [container-scan, code-analysis]
@@ -122,21 +121,17 @@ jobs:
           kubectl get pods -n webgoat
           kubectl get services -n webgoat
           minikube service list
-          
 
-     
       - name: Deploy Prometheus using Helm
         run: |
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
           helm repo update
           helm install prometheus prometheus-community/kube-prometheus-stack -f WebGoat-main/k8s-config/prometheus-values.yaml
 
-      
       - name: Deploy Kube-state-metrics
         run: |
           helm install kube-state-metrics prometheus-community/kube-state-metrics -f WebGoat-main/k8s-config/kube-state-metrics-values.yaml
 
-      
       - name: Deploy Grafana using Helm
         run: |
           helm install grafana prometheus-community/grafana -f WebGoat-main/k8s-config/grafana-values.yaml
@@ -147,10 +142,8 @@ jobs:
           kubectl get services -n monitoring
           minikube service list
 
-  
       - name: Debug Info
         if: always()
         run: |
           kubectl get all -A
           kubectl describe nodes
-          
