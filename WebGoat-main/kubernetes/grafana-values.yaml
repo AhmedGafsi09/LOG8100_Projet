@@ -1,0 +1,23 @@
+grafana:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  adminPassword: "admin" 
+  sidecar:
+    datasources:
+      enabled: true
+      defaultDatasourceName: "prometheus"
+  dashboards:
+    default:
+      enabled: true
+  persistence:
+    enabled: true
+    size: 10Gi
+    accessModes:
+      - ReadWriteOnce

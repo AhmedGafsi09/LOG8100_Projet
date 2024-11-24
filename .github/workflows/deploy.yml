@@ -130,11 +130,11 @@ jobs:
 
       - name: Deploy Kube-state-metrics
         run: |
-          helm install kube-state-metrics prometheus-community/kube-state-metrics -f WebGoat-main/k8s-config/kube-state-metrics-values.yaml
+          helm install kube-state-metrics prometheus-community/kube-state-metrics -f WebGoat-main/kubernetes/kube-state-metrics-values.yaml
 
       - name: Deploy Grafana using Helm
         run: |
-          helm install grafana prometheus-community/grafana -f WebGoat-main/k8s-config/grafana-values.yaml
+          helm install grafana prometheus-community/grafana -f WebGoat-main/kubernetes/grafana-values.yaml
 
       - name: Verify Prometheus and Grafana
         run: |
