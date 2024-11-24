@@ -77,10 +77,11 @@ jobs:
 
       - name: Check for Critical Vulnerabilities and Send Discord Alert
         run: |
-          if [ "$(curl -s -X GET "https://sonarqube.example.com/api/issues/search?componentKeys=WebGoat&types=VULNERABILITY&severities=CRITICAL&resolved=false" | jq '.total')" -gt 0 ]; then
+          CRITICAL_ISSUES=$(curl -s -X GET "https://sonarqube.example.com/api/issues/search?componentKeys=WebGoat&types=VULNERABILITY&severities=CRITICAL&resolved=false" | jq '.total')
+          if [ "$CRITICAL_ISSUES" -gt 0 ]; then
             curl -X POST -H "Content-Type: application/json" \
-              -d '{"content": "A critical vulnerability has been detected in the WebGoat project!"}' \
-              https://discord.com/api/webhooks/1310078253767200788/eQM3uF7CWp0On2wrQqDYZAxYoNkYDdppCBU9BibbIL2ZkM-S67MJb9oDNglMOwqss-P0
+              -d '{"content": "🚨 A critical vulnerability has been detected in the WebGoat project!"}' \
+              ${{ secrets.DISCORD_WEBHOOK_URL }}
           fi
 
   deploy:
@@ -119,14 +120,11 @@ jobs:
 
       - name: Setup Monitoring
         run: |
-          # Create monitoring namespace
           kubectl create namespace monitoring || true
 
-          # Add Helm repos
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
           helm repo update
 
-          # Create Prometheus values
           cat > prometheus-values.yaml << EOF
           alertmanager:
             enabled: true
@@ -138,10 +136,6 @@ jobs:
                 group_interval: 5m
                 repeat_interval: 12h
                 receiver: 'discord'
-                routes:
-                - match:
-                    severity: critical
-                  receiver: 'discord'
               receivers:
               - name: 'discord'
                 webhook_configs:
@@ -152,119 +146,23 @@ jobs:
               serviceMonitorSelectorNilUsesHelmValues: false
           EOF
 
-          # Install Prometheus Stack
           helm install prometheus prometheus-community/kube-prometheus-stack \
             -n monitoring \
             -f prometheus-values.yaml
 
-          # Create Grafana values
-          cat > grafana-values.yaml << EOF
-          adminPassword: admin
-          service:
-            type: NodePort
-            nodePort: 30300
-          datasources:
-            datasources.yaml:
-              apiVersion: 1
-              datasources:
-              - name: Prometheus
-                type: prometheus
-                url: http://prometheus-operated:9090
-                access: proxy
-                isDefault: true
-          dashboardProviders:
-            dashboardproviders.yaml:
-              apiVersion: 1
-              providers:
-              - name: 'default'
-                orgId: 1
-                folder: ''
-                type: file
-                disableDeletion: false
-                editable: true
-                options:
-                  path: /var/lib/grafana/dashboards
-          dashboards:
-            default:
-              kubernetes:
-                gnetId: 315
-                revision: 3
-                datasource: Prometheus
-              webgoat:
-                gnetId: 13105
-                revision: 1
-                datasource: Prometheus
-          EOF
-
-          # Install Grafana
-          helm install grafana prometheus-community/grafana \
-            -n monitoring \
-            -f grafana-values.yaml
-
-          # Create WebGoat ServiceMonitor
-          cat > webgoat-servicemonitor.yaml << EOF
-          apiVersion: monitoring.coreos.com/v1
-          kind: ServiceMonitor
-          metadata:
-            name: webgoat-monitor
-            namespace: monitoring
-          spec:
-            selector:
-              matchLabels:
-                app: webgoat
-            endpoints:
-              - port: http
-            namespaceSelector:
-              matchNames:
-                - webgoat
-          EOF
-
-          kubectl apply -f webgoat-servicemonitor.yaml
-
       - name: Wait for Monitoring Stack
         run: |
-          echo "Waiting for Prometheus..."
           kubectl rollout status statefulset/prometheus-prometheus -n monitoring --timeout=300s
-          
-          echo "Waiting for Grafana..."
           kubectl rollout status deployment/grafana -n monitoring --timeout=300s
-          
-          echo "Checking Monitoring Stack..."
           kubectl get pods -n monitoring
           kubectl get svc -n monitoring
 
-      - name: Create NodePort Services
-        run: |
-          cat > prometheus-nodeport.yaml << EOF
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: prometheus-nodeport
-            namespace: monitoring
-          spec:
-            type: NodePort
-            ports:
-              - port: 9090
-                targetPort: 9090
-                nodePort: 30090
-            selector:
-              app.kubernetes.io/name: prometheus
-          EOF
-
-          kubectl apply -f prometheus-nodeport.yaml
-
       - name: Verify Access
         run: |
-          # Get Grafana admin password
           GRAFANA_PASSWORD=$(kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode)
           echo "Grafana admin password: $GRAFANA_PASSWORD"
-          
-          # Get service URLs
-          echo "Service URLs:"
           echo "Prometheus: http://localhost:30090"
           echo "Grafana: http://localhost:30300"
-          
-          # List all services
           minikube service list -n monitoring
 
       - name: Debug Info
