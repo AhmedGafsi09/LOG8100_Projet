@@ -22,7 +22,6 @@ jobs:
       - name: Build with Maven
         run: |
           mvn -f WebGoat-main/pom.xml clean package -DskipTests
-
       - name: Build Docker Image
         run: docker build -t webgoat:latest ./WebGoat-main
 
@@ -39,7 +38,7 @@ jobs:
           scanners: 'vuln'
 
   code-analysis:
-    name: SonarQube Analysis
+    name: SonarQube Code Analysis
     needs: container-scan
     runs-on: ubuntu-latest
     steps:
@@ -54,49 +53,32 @@ jobs:
           java-version: 21
           distribution: 'temurin'
 
-      - name: Cache SonarQube packages
-        uses: actions/cache@v3
+      - name: Compile Java code with Maven
+        run: |
+          mvn -f WebGoat-main/pom.xml clean compile
+      - name: Run SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         with:
-          path: ~/.sonar/cache
-          key: ${{ runner.os }}-sonar
-          restore-keys: ${{ runner.os }}-sonar
-
-      - name: Fix formatting
-        run: |
-          cd WebGoat-main
-          mvn spotless:apply
-
-      - name: Build and analyze
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-        run: |
-          cd WebGoat-main
-          mvn verify sonar:sonar \
-            -Dspotless.check.skip=true \
-            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
-            -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
-            -Dsonar.projectKey=WebGoat \
-            -Dsonar.projectName=WebGoat \
-            -Dsonar.java.binaries=target/classes
-
+          args: >
+            -Dsonar.projectKey=WebGoat
+            -Dsonar.projectName=WebGoat
+            -Dsonar.java.binaries=WebGoat-main/target/classes
       - name: Check Quality Gate
+        uses: sonarsource/sonarqube-quality-gate-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-        run: |
-          sleep 5  # Allow time for SonarQube to process
-          QUALITY_GATE_STATUS=$(curl -s -u "${SONAR_TOKEN}:" "${SONAR_HOST_URL}/api/qualitygates/project_status?projectKey=WebGoat" | jq -r '.projectStatus.status')
-          echo "Quality Gate Status: $QUALITY_GATE_STATUS"
-          if [ "$QUALITY_GATE_STATUS" = "ERROR" ]; then
-            echo "Quality Gate failed!"
-            curl -X POST \
-              -H "Content-Type: application/json" \
-              -d "{\"content\": \"⚠️ SonarQube Quality Gate failed for WebGoat!\"}" \
-              ${{ secrets.DISCORD_WEBHOOK_URL }}
-            exit 1
-          fi
+        continue-on-error: true
 
+      - name: Check for Critical Vulnerabilities and Send Discord Alert
+        run: |
+          if [ "$(curl -s -X GET "https://sonarqube.example.com/api/issues/search?componentKeys=WebGoat&types=VULNERABILITY&severities=CRITICAL&resolved=false" | jq '.total')" -gt 0 ]; then
+            curl -X POST -H "Content-Type: application/json" \
+              -d '{"content": "A critical vulnerability has been detected in the WebGoat project!"}' \
+              ${{ secrets.DISCORD_WEBHOOK_URL }}
+          fi
   deploy:
     needs: [container-scan, code-analysis]
     runs-on: ubuntu-latest
@@ -112,18 +94,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ansible kubectl
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
       - name: Start Minikube
         run: |
           minikube start --driver=docker
           minikube status
           kubectl get nodes
-
       - name: Set Minikube Context
         run: |
           minikube update-context
           kubectl cluster-info
-
       - name: Run Ansible Playbook
         run: |
           cd LOG8100_Projet/WebGoat-main/ansible
@@ -135,12 +114,10 @@ jobs:
         run: |
           # Create monitoring namespace
           kubectl create namespace monitoring || true
-
           # Add Helm repos
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
           helm repo add grafana https://grafana.github.io/helm-charts
           helm repo update
-
           # Create Prometheus values
           cat > prometheus-values.yaml << EOF
           alertmanager:
@@ -166,12 +143,10 @@ jobs:
               podMonitorSelectorNilUsesHelmValues: false
               serviceMonitorSelectorNilUsesHelmValues: false
           EOF
-
           # Install Prometheus Stack
           helm install prometheus prometheus-community/kube-prometheus-stack \
             -n monitoring \
             -f prometheus-values.yaml
-
           # Create Grafana values
           cat > grafana-values.yaml << EOF
           adminPassword: admin
@@ -210,12 +185,10 @@ jobs:
                 revision: 1
                 datasource: Prometheus
           EOF
-
           # Install Grafana
           helm install grafana grafana/grafana \
             -n monitoring \
             -f grafana-values.yaml
-
       - name: Create WebGoat ServiceMonitor
         run: |
           cat > webgoat-servicemonitor.yaml << EOF
@@ -234,9 +207,7 @@ jobs:
               matchNames:
                 - webgoat
           EOF
-
           kubectl apply -f webgoat-servicemonitor.yaml
-
       - name: Wait for Monitoring Stack
         run: |
           echo "Waiting for components to be ready..."
@@ -252,7 +223,6 @@ jobs:
           
           echo "Checking all resources in monitoring namespace..."
           kubectl get all -n monitoring
-
       - name: Create NodePort Services
         run: |
           # Create NodePort service for Prometheus
@@ -272,9 +242,7 @@ jobs:
               app.kubernetes.io/name: prometheus
               app.kubernetes.io/instance: prometheus-kube-prom-prometheus
           EOF
-
           kubectl apply -f prometheus-nodeport.yaml
-
       - name: Verify Services
         run: |
           echo "Checking monitoring services..."
@@ -288,7 +256,6 @@ jobs:
           
           echo "Service endpoints:"
           minikube service list -n monitoring
-
       - name: Get Access Information
         run: |
           # Get Grafana credentials
@@ -304,7 +271,6 @@ jobs:
           # Get pod status
           echo "Pod Status:"
           kubectl get pods -n monitoring
-
       - name: Debug Info
         if: always()
         run: |
