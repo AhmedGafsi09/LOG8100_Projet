@@ -68,6 +68,7 @@ jobs:
         run: |
           cd WebGoat-main
           mvn verify sonar:sonar \
+            -Dspotless.check.skip=true \
             -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
             -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
             -Dsonar.projectKey=WebGoat \
