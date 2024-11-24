@@ -124,6 +124,7 @@ jobs:
 
           # Add Helm repos
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add grafana https://grafana.github.io/helm-charts
           helm repo update
 
           # Create Prometheus values
@@ -197,7 +198,7 @@ jobs:
           EOF
 
           # Install Grafana
-          helm install grafana prometheus-community/grafana \
+          helm install grafana grafana/grafana \
             -n monitoring \
             -f grafana-values.yaml
 
