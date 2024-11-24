@@ -74,6 +74,15 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         continue-on-error: true
+      - name: Check for Critical Vulnerabilities and Send Discord Alert
+        run: |
+          if [ "$(curl -s -X GET "https://sonarqube.example.com/api/issues/search?componentKeys=WebGoat&types=VULNERABILITY&severities=CRITICAL&resolved=false" | jq '.total' )" -gt 0 ]; then
+            curl -X POST -H "Content-Type: application/json" \
+            -d '{"content": "A critical vulnerability has been detected in the WebGoat project!"}' \
+           https://discord.com/api/webhooks/1310078253767200788/eQM3uF7CWp0On2wrQqDYZAxYoNkYDdppCBU9BibbIL2ZkM-S67MJb9oDNglMOwqss-P0
+         fi
+
+
 
   deploy:
     needs: [container-scan, code-analysis]
@@ -115,19 +124,19 @@ jobs:
           minikube service list
           
 
-      # Étape pour déployer Prometheus
+     
       - name: Deploy Prometheus using Helm
         run: |
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
           helm repo update
           helm install prometheus prometheus-community/kube-prometheus-stack -f WebGoat-main/k8s-config/prometheus-values.yaml
 
-      # Étape pour déployer Kube-state-metrics
+      
       - name: Deploy Kube-state-metrics
         run: |
           helm install kube-state-metrics prometheus-community/kube-state-metrics -f WebGoat-main/k8s-config/kube-state-metrics-values.yaml
 
-      # Étape pour déployer Grafana
+      
       - name: Deploy Grafana using Helm
         run: |
           helm install grafana prometheus-community/grafana -f WebGoat-main/k8s-config/grafana-values.yaml
@@ -145,17 +154,3 @@ jobs:
           kubectl get all -A
           kubectl describe nodes
           
-      - name: Set up Helm
-        uses: Helm/setup-helm@v1
-        with:
-          version: 'v3.9.0'
-
-      - name: Add Prometheus Helm repo
-        run: helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-
-      - name: Update Helm repos
-        run: helm repo update
-
-      - name: Install Prometheus with custom values
-        run: helm install prometheus prometheus-community/kube-prometheus-stack -f k8s-config/values.yaml
-
