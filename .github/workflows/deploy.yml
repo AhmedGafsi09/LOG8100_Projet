@@ -1,5 +1,3 @@
-name: Build, Security Scan, and Code Analysis
-
 name: CI/CD Pipeline
 on:
   push:
