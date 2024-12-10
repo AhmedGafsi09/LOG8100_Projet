@@ -276,3 +276,26 @@ jobs:
         run: |
           kubectl get all -A
           kubectl describe nodes
+  
+      # Étape pour créer le namespace WebGoat
+      - name: Create WebGoat Namespace
+        run: |
+          kubectl create namespace webgoat || true
+      
+      - name: Apply WebGoat Pod Configuration
+        run: |
+          kubectl apply -f WebGoat-main/kubernetes/webgoat-pod.yaml
+
+
+      # Étape pour vérifier que le Pod WebGoat fonctionne
+      - name: Verify WebGoat Pod
+        run: |
+          kubectl get pods -n webgoat
+
+
+
+
+
+
+
+
