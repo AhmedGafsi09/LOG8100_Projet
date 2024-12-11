@@ -284,7 +284,7 @@ jobs:
       
       - name: Apply WebGoat Pod Configuration
         run: |
-          kubectl apply -f ../../WebGoat-main/kubernetes/webgoat-pod.yaml
+          kubectl apply -f ../WebGoat-main/kubernetes/webgoat-pod.yaml
 
 
       # Étape pour vérifier que le Pod WebGoat fonctionne
