@@ -26,9 +26,31 @@ spec:
           value: "Europe/Amsterdam"
         - name: JAVA_OPTS
           value: "-Djava.security.egd=file:/dev/./urandom"
+        - name: SPRING_PROFILES_ACTIVE
+          value: "prod"
+        - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+          value: "health,prometheus,metrics"
+        - name: MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS
+          value: "always"
+        - name: MANAGEMENT_PROMETHEUS_METRICS_EXPORT_ENABLED
+          value: "true"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
         startupProbe:
           tcpSocket:
             port: 8080
           initialDelaySeconds: 60
           periodSeconds: 10
           failureThreshold: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 3
