@@ -1,17 +1,19 @@
 name: Deployment
 
 on:
-  workflow_run:
-    workflows: ["Code Analysis"]
-    types:
-      - completed
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
 
 jobs:
   deploy:
-    needs: [container-scan, code-analysis]
+    name: Deploy to Kubernetes
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Code from Another Repository
+      - name: Checkout LOG8100_Projet Repository
         uses: actions/checkout@v3
         with:
           repository: 'AhmedGafsi09/LOG8100_Projet'
@@ -45,10 +47,12 @@ jobs:
         run: |
           # Create monitoring namespace
           kubectl create namespace monitoring || true
-          # Add Helm repos
+          
+          # Add Helm repositories
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
           helm repo add grafana https://grafana.github.io/helm-charts
           helm repo update
+          
           # Create Prometheus values
           cat > prometheus-values.yaml << EOF
           alertmanager:
@@ -74,10 +78,12 @@ jobs:
               podMonitorSelectorNilUsesHelmValues: false
               serviceMonitorSelectorNilUsesHelmValues: false
           EOF
+          
           # Install Prometheus Stack
           helm install prometheus prometheus-community/kube-prometheus-stack \
             -n monitoring \
             -f prometheus-values.yaml
+          
           # Create Grafana values
           cat > grafana-values.yaml << EOF
           adminPassword: admin
@@ -116,6 +122,7 @@ jobs:
                 revision: 1
                 datasource: Prometheus
           EOF
+          
           # Install Grafana
           helm install grafana grafana/grafana \
             -n monitoring \
