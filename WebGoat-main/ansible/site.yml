@@ -1,59 +1,175 @@
 ---
-- name: Configure Kubernetes and Deploy WebGoat
+- name: Install and Configure Kubernetes Infrastructure
   hosts: azure-vm
   become: yes
   tasks:
-    # Vérification Kubernetes
-    - name: Verify Kubernetes cluster
-      command: kubectl cluster-info
-      register: cluster_info
-      changed_when: false
+    # Installation des prérequis
+    - name: Install dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - gnupg
+        update_cache: yes
+        state: present
 
-    # Création des namespaces
-    - name: Create namespaces
-      command: "{{ item }}"
+    # Configuration Docker
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu jammy stable
+        state: present
+
+    - name: Install Docker
+      apt:
+        name: docker-ce
+        state: present
+
+    # Configuration Kubernetes
+    - name: Add Kubernetes GPG key
+      apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
+
+    - name: Add Kubernetes repository
+      apt_repository:
+        repo: deb http://apt.kubernetes.io/ kubernetes-xenial main
+        state: present
+        filename: kubernetes.list
+
+    - name: Install Kubernetes packages
+      apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+
+    - name: Hold Kubernetes packages
+      dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
       loop:
-        - kubectl create namespace webgoat || true
-        - kubectl create namespace monitoring || true
-      changed_when: false
+        - kubelet
+        - kubeadm
+        - kubectl
 
-    # Déploiement des ressources WebGoat
-    - name: Deploy WebGoat resources
-      command: kubectl apply -f manifests/{{ item }}
-      loop:
-        - resource-quota.yml
-        - service-account.yml
-        - network-policy.yml
-        - deployment.yml
-        - service.yml
-      args:
-        chdir: "{{ playbook_dir }}"
+    # Configuration Système
+    - name: Disable swap
+      command: swapoff -a
+      
+    - name: Remove swap from fstab
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*?\sswap\s+.*)$'
+        replace: '# \1'
 
-    # Configuration Monitoring
-    - name: Add Helm repos
+    # Initialisation Kubernetes
+    - name: Initialize Kubernetes cluster
+      command: kubeadm init --pod-network-cidr=192.168.0.0/16
+      register: kubeadm_init
+      ignore_errors: yes
+
+    - name: Create .kube directory
+      file:
+        path: /home/azureuser/.kube
+        state: directory
+        owner: azureuser
+        group: azureuser
+
+    - name: Copy kube config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/azureuser/.kube/config
+        remote_src: yes
+        owner: azureuser
+        group: azureuser
+
+    # Installation CNI (Calico)
+    - name: Install Calico network
+      command: kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+      become_user: azureuser
+
+    # Installation des outils de monitoring
+    - name: Add Helm repository
       command: "{{ item }}"
       loop:
         - helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
         - helm repo add grafana https://grafana.github.io/helm-charts
         - helm repo update
-      changed_when: false
+      become_user: azureuser
+
+    # Déploiement WebGoat
+    - name: Create WebGoat namespace
+      command: kubectl create namespace webgoat
+      ignore_errors: yes
+      become_user: azureuser
+
+    - name: Deploy WebGoat manifests
+      command: kubectl apply -f "/root/manifests/{{ item }}"
+      loop:
+        - resource-quota.yml
+        - service-account.yml
+        - network-policy.yml
+        - health-check.yml
+        - deployment.yml
+        - service.yml
+      become_user: azureuser
 
     # Installation Prometheus et Grafana
-    - name: Install monitoring stack
+    - name: Create monitoring namespace
+      command: kubectl create namespace monitoring
+      ignore_errors: yes
+      become_user: azureuser
+
+    - name: Install Prometheus
+      command: >
+        helm install prometheus prometheus-community/kube-prometheus-stack
+        --namespace monitoring
+        -f ../kubernetes/prometheus-values.yaml
+      become_user: azureuser
+      ignore_errors: yes
+
+    - name: Install Grafana
+      command: >
+        helm install grafana grafana/grafana
+        --namespace monitoring
+        -f ../kubernetes/grafana-values.yaml
+      become_user: azureuser
+      ignore_errors: yes
+
+    # Vérification
+    - name: Wait for pods to be ready
+      command: kubectl wait --for=condition=Ready pods --all --all-namespaces --timeout=300s
+      become_user: azureuser
+      ignore_errors: yes
+
+    - name: Show cluster status
       command: "{{ item }}"
       loop:
-        - helm install prometheus prometheus-community/kube-prometheus-stack -n monitoring -f ../kubernetes/prometheus-values.yaml
-        - helm install grafana grafana/grafana -n monitoring -f ../kubernetes/grafana-values.yaml
+        - kubectl get nodes
+        - kubectl get pods --all-namespaces
+        - kubectl get svc --all-namespaces
+      register: cluster_status
+      become_user: azureuser
 
-    # Vérification des déploiements
-    - name: Verify deployments
-      command: "{{ item }}"
-      loop:
-        - kubectl get pods,svc -n webgoat
-        - kubectl get pods,svc -n monitoring
-      register: deployment_status
-      changed_when: false
-
-    - name: Show deployment status
+    - name: Display cluster status
       debug:
-        var: deployment_status.results
+        var: cluster_status.results
+
+    - name: Get service URLs
+      command: kubectl get svc -n monitoring grafana -o jsonpath="{.spec.ports[0].nodePort}"
+      register: grafana_port
+      become_user: azureuser
+
+    - name: Display access information
+      debug:
+        msg:
+          - "Grafana will be accessible at: http://{{ ansible_host }}:{{ grafana_port.stdout }}"
+          - "WebGoat will be accessible at: http://{{ ansible_host }}:30080"
