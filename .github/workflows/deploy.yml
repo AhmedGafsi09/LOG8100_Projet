@@ -1,32 +1,234 @@
-name: Deploy
+name: Deployment
+
 on:
-  workflow_run:
-    workflows: ["Docker Build and Push", "Code Analysis"]
-    types:
-      - completed
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
 
 jobs:
   deploy:
+    name: Deploy to Kubernetes
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
-      
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
+      - name: Checkout LOG8100_Projet Repository
+        uses: actions/checkout@v3
         with:
-          version: 'latest'
-      
-      - name: Configure kubectl
+          repository: 'AhmedGafsi09/LOG8100_Projet'
+          path: 'LOG8100_Projet'
+
+      - name: Install Prerequisites
         run: |
-          echo "${{ secrets.KUBE_CONFIG }}" > kubeconfig
-          export KUBECONFIG=kubeconfig
-      
-      - name: Deploy to Kubernetes
+          sudo apt-get update
+          sudo apt-get install -y ansible kubectl
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Start Minikube
         run: |
-          kubectl apply -f WebGoat-main/kubernetes/ --validate=false
-          
+          minikube start --driver=docker
+          minikube status
+          kubectl get nodes
+
+      - name: Set Minikube Context
+        run: |
+          minikube update-context
+          kubectl cluster-info
+
+      - name: Run Ansible Playbook
+        run: |
+          cd LOG8100_Projet/WebGoat-main/ansible
+          ansible-playbook -i inventory.yml site.yml
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: false
+
       - name: Setup Monitoring
         run: |
+          # Create monitoring namespace
           kubectl create namespace monitoring || true
+          
+          # Add Helm repositories
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-          helm install prometheus prometheus-community/kube-prometheus-stack -f WebGoat-main/prometheus/prometheus-kube.yml
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo update
+          
+          # Create Prometheus values
+          cat > prometheus-values.yaml << EOF
+          alertmanager:
+            enabled: true
+            config:
+              global:
+                resolve_timeout: 5m
+              route:
+                group_wait: 30s
+                group_interval: 5m
+                repeat_interval: 12h
+                receiver: 'discord'
+                routes:
+                - match:
+                    severity: critical
+                  receiver: 'discord'
+              receivers:
+              - name: 'discord'
+                webhook_configs:
+                - url: '${{ secrets.DISCORD_WEBHOOK_URL }}'
+          prometheus:
+            prometheusSpec:
+              podMonitorSelectorNilUsesHelmValues: false
+              serviceMonitorSelectorNilUsesHelmValues: false
+          EOF
+          
+          # Install Prometheus Stack
+          helm install prometheus prometheus-community/kube-prometheus-stack \
+            -n monitoring \
+            -f prometheus-values.yaml
+          
+          # Create Grafana values
+          cat > grafana-values.yaml << EOF
+          adminPassword: admin
+          service:
+            type: NodePort
+            nodePort: 30300
+          datasources:
+            datasources.yaml:
+              apiVersion: 1
+              datasources:
+              - name: Prometheus
+                type: prometheus
+                url: http://prometheus-operated:9090
+                access: proxy
+                isDefault: true
+          dashboardProviders:
+            dashboardproviders.yaml:
+              apiVersion: 1
+              providers:
+              - name: 'default'
+                orgId: 1
+                folder: ''
+                type: file
+                disableDeletion: false
+                editable: true
+                options:
+                  path: /var/lib/grafana/dashboards
+          dashboards:
+            default:
+              kubernetes:
+                gnetId: 315
+                revision: 3
+                datasource: Prometheus
+              webgoat:
+                gnetId: 13105
+                revision: 1
+                datasource: Prometheus
+          EOF
+          
+          # Install Grafana
+          helm install grafana grafana/grafana \
+            -n monitoring \
+            -f grafana-values.yaml
+
+      - name: Create WebGoat ServiceMonitor
+        run: |
+          cat > webgoat-servicemonitor.yaml << EOF
+          apiVersion: monitoring.coreos.com/v1
+          kind: ServiceMonitor
+          metadata:
+            name: webgoat-monitor
+            namespace: monitoring
+          spec:
+            selector:
+              matchLabels:
+                app: webgoat
+            endpoints:
+              - port: http
+            namespaceSelector:
+              matchNames:
+                - webgoat
+          EOF
+          kubectl apply -f webgoat-servicemonitor.yaml
+
+      - name: Wait for Monitoring Stack
+        run: |
+          echo "Waiting for components to be ready..."
+          
+          # Wait for Prometheus Operator
+          kubectl rollout status deployment/prometheus-kube-prometheus-operator -n monitoring --timeout=300s || true
+          
+          # Wait for Prometheus
+          kubectl rollout status statefulset/prometheus-kube-prom-prometheus -n monitoring --timeout=300s || true
+          
+          # Wait for Alertmanager
+          kubectl rollout status statefulset/alertmanager-prometheus-kube-prom-alertmanager -n monitoring --timeout=300s || true
+          
+          echo "Checking all resources in monitoring namespace..."
+          kubectl get all -n monitoring
+
+      - name: Create NodePort Services
+        run: |
+          # Create NodePort service for Prometheus
+          cat > prometheus-nodeport.yaml << EOF
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: prometheus-nodeport
+            namespace: monitoring
+          spec:
+            type: NodePort
+            ports:
+              - port: 9090
+                targetPort: 9090
+                nodePort: 30090
+            selector:
+              app.kubernetes.io/name: prometheus
+              app.kubernetes.io/instance: prometheus-kube-prom-prometheus
+          EOF
+          kubectl apply -f prometheus-nodeport.yaml
+
+      - name: Verify Services
+        run: |
+          echo "Checking monitoring services..."
+          kubectl get svc -n monitoring
+          
+          echo "Checking Prometheus pods..."
+          kubectl get pods -n monitoring -l app=prometheus
+          
+          echo "Checking Grafana pods..."
+          kubectl get pods -n monitoring -l app.kubernetes.io/instance=grafana
+          
+          echo "Service endpoints:"
+          minikube service list -n monitoring
+
+      - name: Get Access Information
+        run: |
+          # Get Grafana credentials
+          echo "Grafana admin credentials:"
+          echo "Username: admin"
+          echo "Password: $(kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode)"
+          
+          # Get service URLs
+          echo "Service URLs (available after port-forward):"
+          echo "Prometheus: http://localhost:30090"
+          echo "Grafana: http://localhost:30300"
+          
+          # Get pod status
+          echo "Pod Status:"
+          kubectl get pods -n monitoring
+
+      - name: Debug Info
+        if: always()
+        run: |
+          kubectl get all -A
+          kubectl describe nodes
+
+      - name: Create WebGoat Namespace
+        run: |
+          kubectl create namespace webgoat || true
+
+      - name: Apply WebGoat Pod Configuration
+        run: |
+          kubectl apply -f LOG8100_Projet/WebGoat-main/kubernetes/webgoat-pod.yaml
+
+      - name: Verify WebGoat Pod
+        run: |
+          kubectl get pods -n webgoat
