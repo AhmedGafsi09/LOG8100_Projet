@@ -1,33 +1,59 @@
-- name: Verify Kubernetes Components
+---
+- name: Configure Kubernetes and Deploy WebGoat
   hosts: azure-vm
   become: yes
   tasks:
-    - name: Verify kubelet is installed
-      command: kubelet --version
-      register: kubelet_version
-      failed_when: kubelet_version.rc != 0
+    # Vérification Kubernetes
+    - name: Verify Kubernetes cluster
+      command: kubectl cluster-info
+      register: cluster_info
       changed_when: false
 
-    - name: Show kubelet version
-      debug:
-        msg: "Kubelet version: {{ kubelet_version.stdout }}"
-
-    - name: Verify kubeadm is installed
-      command: kubeadm version
-      register: kubeadm_version
-      failed_when: kubeadm_version.rc != 0
+    # Création des namespaces
+    - name: Create namespaces
+      command: "{{ item }}"
+      loop:
+        - kubectl create namespace webgoat || true
+        - kubectl create namespace monitoring || true
       changed_when: false
 
-    - name: Show kubeadm version
-      debug:
-        msg: "Kubeadm version: {{ kubeadm_version.stdout }}"
+    # Déploiement des ressources WebGoat
+    - name: Deploy WebGoat resources
+      command: kubectl apply -f manifests/{{ item }}
+      loop:
+        - resource-quota.yml
+        - service-account.yml
+        - network-policy.yml
+        - deployment.yml
+        - service.yml
+      args:
+        chdir: "{{ playbook_dir }}"
 
-    - name: Verify kubectl is installed
-      command: kubectl version --client
-      register: kubectl_version
-      failed_when: kubectl_version.rc != 0
+    # Configuration Monitoring
+    - name: Add Helm repos
+      command: "{{ item }}"
+      loop:
+        - helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        - helm repo add grafana https://grafana.github.io/helm-charts
+        - helm repo update
       changed_when: false
 
-    - name: Show kubectl version
+    # Installation Prometheus et Grafana
+    - name: Install monitoring stack
+      command: "{{ item }}"
+      loop:
+        - helm install prometheus prometheus-community/kube-prometheus-stack -n monitoring -f ../kubernetes/prometheus-values.yaml
+        - helm install grafana grafana/grafana -n monitoring -f ../kubernetes/grafana-values.yaml
+
+    # Vérification des déploiements
+    - name: Verify deployments
+      command: "{{ item }}"
+      loop:
+        - kubectl get pods,svc -n webgoat
+        - kubectl get pods,svc -n monitoring
+      register: deployment_status
+      changed_when: false
+
+    - name: Show deployment status
       debug:
-        msg: "Kubectl version: {{ kubectl_version.stdout }}"
+        var: deployment_status.results

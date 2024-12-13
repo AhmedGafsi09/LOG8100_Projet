@@ -1,73 +1,32 @@
 name: Deployment
-
 on:
   push:
-    branches:
-      - main
-      - develop
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   deploy:
-    name: Deploy to Kubernetes
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
         with:
           repository: 'AhmedGafsi09/LOG8100_Projet'
           path: 'LOG8100_Projet'
 
-      - name: Install Prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ansible kubectl curl
-          curl -fsSL https://get.helm.sh/helm-v3.12.0-linux-amd64.tar.gz | tar -xz -C /usr/local/bin --strip-components=1
-
-      - name: Set up SSH Private Key
+      - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_PRIVATE_KEY }}" > ~/.ssh/aks-node-1_key.pem
           chmod 600 ~/.ssh/aks-node-1_key.pem
 
-      - name: Deploy to Azure VM
+      - name: Install Ansible
         run: |
-          # Copy manifests to VM
-          scp -i ~/.ssh/aks-node-1_key.pem -r LOG8100_Projet/WebGoat-main/kubernetes/* azureuser@20.63.16.243:~/kubernetes/
+          sudo apt-get update
+          sudo apt-get install -y ansible
 
-          # Execute deployment commands on VM
-          ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 "
-            kubectl create namespace webgoat || true
-            kubectl apply -f ~/kubernetes/webgoat-deployment.yml
-            kubectl apply -f ~/kubernetes/webgoat-service.yml
-            kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
-          "
-
-      - name: Setup Monitoring
+      - name: Run Ansible Playbook
         run: |
-          ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 "
-            helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-            helm repo add grafana https://grafana.github.io/helm-charts
-            helm repo update
-            
-            # Install monitoring stack
-            kubectl create namespace monitoring || true
-            helm install prometheus prometheus-community/kube-prometheus-stack \
-              --namespace monitoring \
-              -f ~/kubernetes/prometheus-values.yaml
-              
-            helm install grafana grafana/grafana \
-              --namespace monitoring \
-              -f ~/kubernetes/grafana-values.yaml
-          "
-
-      - name: Verify Deployment
-        run: |
-          ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 "
-            echo 'WebGoat Status:'
-            kubectl get pods,svc -n webgoat
-            
-            echo 'Monitoring Status:'
-            kubectl get pods,svc -n monitoring
-          "
+          cd LOG8100_Projet/WebGoat-main/ansible
+          ansible-playbook -i inventory.yml site.yml
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: false
