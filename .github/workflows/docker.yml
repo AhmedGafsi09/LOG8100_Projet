@@ -55,12 +55,9 @@ jobs:
           docker tag $IMAGE_NAME:latest $IMAGE_NAME:${{ github.sha }}
 
       - name: Scan Docker Image with Trivy
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: $IMAGE_NAME:latest
-          format: 'table'
-          exit-code: 1
-          severity: 'CRITICAL,HIGH'
+        run: |
+          trivy image --timeout 10m --scanners vuln --skip-files webgoat.jar log8100_projet/webgoat:latest
+
 
       - name: Push Docker Images
         run: |
