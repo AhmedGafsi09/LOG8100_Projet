@@ -1,1 +1,54 @@
 
+name: Code Analysis
+
+on:
+  workflow_run:
+    workflows: ["Container Security Scan"]
+    types:
+      - completed
+
+jobs:
+  code-analysis:
+    name: SonarQube Code Analysis
+    runs-on: ubuntu-latest
+    needs: container-scan
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v3
+        with:
+          java-version: 21
+          distribution: 'temurin'
+
+      - name: Compile Java code with Maven
+        run: |
+          mvn -f WebGoat-main/pom.xml clean compile
+
+      - name: Run SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=WebGoat
+            -Dsonar.projectName=WebGoat
+            -Dsonar.java.binaries=WebGoat-main/target/classes
+
+      - name: Check Quality Gate
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        continue-on-error: true
+
+      - name: Check for Critical Vulnerabilities and Send Discord Alert
+        run: |
+          if [ "$(curl -s -X GET "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=WebGoat&types=VULNERABILITY&severities=CRITICAL&resolved=false" | jq '.total')" -gt 0 ]; then
+            curl -X POST -H "Content-Type: application/json" \
+              -d '{"content": "A critical vulnerability has been detected in the WebGoat project!"}' \
+              ${{ secrets.DISCORD_WEBHOOK_URL }}
+          fi
