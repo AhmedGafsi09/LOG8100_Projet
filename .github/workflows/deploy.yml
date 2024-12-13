@@ -45,7 +45,7 @@ jobs:
       - name: Run Ansible Playbook
         run: |
             cd LOG8100_Projet/WebGoat-main/ansible
-            ansible-playbook -i inventory.yml playbook.yml --key-file ~/.ssh/aks-node-1_key.pem
+            ansible-playbook -i inventory.yml site.yml --key-file ~/.ssh/aks-node-1_key.pem
 
       - name: Setup Monitoring
         run: |
