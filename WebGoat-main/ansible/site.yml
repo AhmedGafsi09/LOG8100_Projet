@@ -1,70 +1,33 @@
-- name: Install and Configure Kubernetes
+- name: Verify Kubernetes Components
   hosts: azure-vm
   become: yes
   tasks:
-    # Ensure dependencies are installed
-    - name: Install dependencies
-      apt:
-        name:
-          - apt-transport-https
-          - ca-certificates
-          - curl
-          - software-properties-common
-        state: present
-        update_cache: yes
-
-    # Download kubeadm, kubectl, kubelet packages
-    - name: Download Kubernetes kubeadm package
-      get_url:
-        url: https://packages.cloud.google.com/apt/pool/kubeadm_1.29.12-00_amd64.deb
-        dest: /tmp/kubeadm.deb
-
-    - name: Download Kubernetes kubectl package
-      get_url:
-        url: https://packages.cloud.google.com/apt/pool/kubectl_1.29.12-00_amd64.deb
-        dest: /tmp/kubectl.deb
-
-    - name: Download Kubernetes kubelet package
-      get_url:
-        url: https://packages.cloud.google.com/apt/pool/kubelet_1.29.12-00_amd64.deb
-        dest: /tmp/kubelet.deb
-
-    # Install Kubernetes packages
-    - name: Install kubeadm
-      apt:
-        deb: /tmp/kubeadm.deb
-        state: present
-
-    - name: Install kubectl
-      apt:
-        deb: /tmp/kubectl.deb
-        state: present
-
-    - name: Install kubelet
-      apt:
-        deb: /tmp/kubelet.deb
-        state: present
-
-    # Hold the versions to prevent auto-upgrade
-    - name: Hold kubeadm, kubectl, kubelet versions
-      apt:
-        name:
-          - kubeadm
-          - kubectl
-          - kubelet
-        state: present
-        allow_downgrade: yes
-        update_cache: no
-        force: yes
-      loop_control:
-        loop_var: pkg
-
-    # Verify installation
-    - name: Check Kubernetes version
-      command: kubectl version --client
-      register: kubectl_version
+    - name: Verify kubelet is installed
+      command: kubelet --version
+      register: kubelet_version
+      failed_when: kubelet_version.rc != 0
       changed_when: false
 
-    - name: Display Kubernetes version
+    - name: Show kubelet version
       debug:
-        msg: "{{ kubectl_version.stdout }}"
+        msg: "Kubelet version: {{ kubelet_version.stdout }}"
+
+    - name: Verify kubeadm is installed
+      command: kubeadm version
+      register: kubeadm_version
+      failed_when: kubeadm_version.rc != 0
+      changed_when: false
+
+    - name: Show kubeadm version
+      debug:
+        msg: "Kubeadm version: {{ kubeadm_version.stdout }}"
+
+    - name: Verify kubectl is installed
+      command: kubectl version --client
+      register: kubectl_version
+      failed_when: kubectl_version.rc != 0
+      changed_when: false
+
+    - name: Show kubectl version
+      debug:
+        msg: "Kubectl version: {{ kubectl_version.stdout }}"
