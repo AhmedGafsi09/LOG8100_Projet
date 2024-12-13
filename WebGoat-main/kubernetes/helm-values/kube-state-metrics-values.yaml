@@ -1,13 +1,23 @@
-namespaceOverride: "monitoring"
-
-prometheus:
-  monitor:
-    enabled: true
-
-resources:
-  limits:
-    cpu: 100m
-    memory: 128Mi
-  requests:
-    cpu: 50m
-    memory: 64Mi
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-state-metrics-values
+  namespace: monitoring
+data:
+  values.yaml: |
+    namespaceOverride: "monitoring"
+    
+    kubeStateMetrics:
+      enabled: true
+      replicas: 1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 200m
+          memory: 512Mi
+    
+    prometheus:
+      monitor:
+        enabled: true
