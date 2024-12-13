@@ -72,11 +72,10 @@ jobs:
 
       - name: Apply WebGoat Configuration
         run: |
-          # Create WebGoat namespace
           kubectl create namespace webgoat || true
-          # Apply WebGoat configuration
-          kubectl apply -f LOG8100_Projet/WebGoat-main/kubernetes/webgoat-pod.yaml
-
+          kubectl apply -f LOG8100_Projet/WebGoat-main/kubernetes/webgoat-deployment.yml
+          kubectl apply -f LOG8100_Projet/WebGoat-main/kubernetes/webgoat-service.yml
+          
       - name: Wait for Deployments
         run: |
             ssh -o StrictHostKeyChecking=no -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 <<EOF
