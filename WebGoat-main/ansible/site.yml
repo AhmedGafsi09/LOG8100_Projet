@@ -1,207 +1,207 @@
 ---
 - name: Install and Configure Kubernetes Infrastructure
- hosts: azure-vm
- become: yes
- tasks:
-   # Nettoyage des anciens fichiers
-   - name: Remove old Kubernetes sources
-     file:
-       path: /etc/apt/sources.list.d/kubernetes.list
-       state: absent
+  hosts: azure-vm
+  become: yes
+  tasks:
+    # Nettoyage des anciens fichiers
+    - name: Remove old Kubernetes sources
+      file:
+        path: /etc/apt/sources.list.d/kubernetes.list
+        state: absent
 
-   # Installation des prérequis
-   - name: Install dependencies
-     apt:
-       name:
-         - apt-transport-https
-         - ca-certificates
-         - curl
-         - gnupg
-       update_cache: yes
-       state: present
+    # Installation des prérequis
+    - name: Install dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+        update_cache: yes
+        state: present
 
-   # Configuration Docker
-   - name: Add Docker GPG key
-     shell: |
-       curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+    # Configuration Docker
+    - name: Add Docker GPG key
+      shell: |
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
 
-   - name: Add Docker repository
-     shell: |
-       echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+    - name: Add Docker repository
+      shell: |
+        echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-   # Configuration Kubernetes
-   - name: Add Kubernetes GPG key
-     shell: |
-       curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    # Configuration Kubernetes
+    - name: Add Kubernetes GPG key
+      shell: |
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
-   - name: Add Kubernetes repository
-     shell: |
-       echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+    - name: Add Kubernetes repository
+      shell: |
+        echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list
 
-   - name: Update apt and install packages
-     apt:
-       name:
-         - docker-ce
-         - kubelet
-         - kubeadm
-         - kubectl
-       update_cache: yes
-       state: present
+    - name: Update apt and install packages
+      apt:
+        name:
+          - docker-ce
+          - kubelet
+          - kubeadm
+          - kubectl
+        update_cache: yes
+        state: present
 
-   # Configuration système
-   - name: Configure Docker daemon
-     copy:
-       content: |
-         {
-           "exec-opts": ["native.cgroupdriver=systemd"],
-           "log-driver": "json-file",
-           "log-opts": {
-             "max-size": "100m"
-           },
-           "storage-driver": "overlay2"
-         }
-       dest: /etc/docker/daemon.json
-       
-   - name: Create Docker directory
-     file:
-       path: /etc/systemd/system/docker.service.d
-       state: directory
+    # Configuration système
+    - name: Configure Docker daemon
+      copy:
+        content: |
+          {
+            "exec-opts": ["native.cgroupdriver=systemd"],
+            "log-driver": "json-file",
+            "log-opts": {
+              "max-size": "100m"
+            },
+            "storage-driver": "overlay2"
+          }
+        dest: /etc/docker/daemon.json
 
-   - name: Restart Docker
-     systemd:
-       name: docker
-       state: restarted
-       daemon_reload: yes
-       enabled: yes
+    - name: Create Docker directory
+      file:
+        path: /etc/systemd/system/docker.service.d
+        state: directory
 
-   - name: Disable swap
-     command: swapoff -a
-     
-   # Configuration Firewall
-   - name: Configure firewall rules
-     ufw:
-       rule: allow
-       port: "{{ item }}"
-       proto: tcp
-     loop:
-       - 22    # SSH
-       - 6443  # Kubernetes API
-       - 8080  # WebGoat
-       - 9090  # Prometheus
-       - 3000  # Grafana
-       - 30000-32767  # NodePort range
+    - name: Restart Docker
+      systemd:
+        name: docker
+        state: restarted
+        daemon_reload: yes
+        enabled: yes
 
-   # Initialisation Kubernetes
-   - name: Initialize Kubernetes cluster
-     command: kubeadm init --pod-network-cidr=192.168.0.0/16
-     register: kubeadm_init
-     ignore_errors: yes
+    - name: Disable swap
+      command: swapoff -a
 
-   - name: Create kube directory
-     file:
-       path: /home/azureuser/.kube
-       state: directory
-       owner: azureuser
-       group: azureuser
-       mode: '0755'
+    # Configuration Firewall
+    - name: Configure firewall rules
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - 22    # SSH
+        - 6443  # Kubernetes API
+        - 8080  # WebGoat
+        - 9090  # Prometheus
+        - 3000  # Grafana
+        - 30000-32767  # NodePort range
 
-   - name: Copy kube config
-     copy:
-       src: /etc/kubernetes/admin.conf
-       dest: /home/azureuser/.kube/config
-       remote_src: yes
-       owner: azureuser
-       group: azureuser
-       mode: '0600'
+    # Initialisation Kubernetes
+    - name: Initialize Kubernetes cluster
+      command: kubeadm init --pod-network-cidr=192.168.0.0/16
+      register: kubeadm_init
+      ignore_errors: yes
 
-   # Installation Calico CNI
-   - name: Install Calico network
-     command: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/calico.yaml
-     become_user: azureuser
+    - name: Create kube directory
+      file:
+        path: /home/azureuser/.kube
+        state: directory
+        owner: azureuser
+        group: azureuser
+        mode: '0755'
 
-   # Installation Helm
-   - name: Download and install Helm
-     shell: |
-       curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-       chmod 700 get_helm.sh
-       ./get_helm.sh
+    - name: Copy kube config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/azureuser/.kube/config
+        remote_src: yes
+        owner: azureuser
+        group: azureuser
+        mode: '0600'
 
-   # Création des namespaces
-   - name: Create namespaces
-     command: "{{ item }}"
-     with_items:
-       - kubectl create namespace webgoat
-       - kubectl create namespace monitoring
-     ignore_errors: yes
-     become_user: azureuser
+    # Installation Calico CNI
+    - name: Install Calico network
+      command: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/calico.yaml
+      become_user: azureuser
 
-   # Déploiement des manifests WebGoat
-   - name: Deploy WebGoat resources
-     command: kubectl apply -f {{ item }}
-     with_items:
-       - manifests/resource-quota.yml
-       - manifests/service-account.yml
-       - manifests/network-policy.yml
-       - manifests/deployment.yml
-       - manifests/service.yml
-     become_user: azureuser
+    # Installation Helm
+    - name: Download and install Helm
+      shell: |
+        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        chmod 700 get_helm.sh
+        ./get_helm.sh
 
-   # Installation Prometheus et Grafana
-   - name: Add Helm repositories
-     command: "{{ item }}"
-     with_items:
-       - helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-       - helm repo add grafana https://grafana.github.io/helm-charts
-       - helm repo update
-     become_user: azureuser
+    # Création des namespaces
+    - name: Create namespaces
+      command: "{{ item }}"
+      with_items:
+        - kubectl create namespace webgoat
+        - kubectl create namespace monitoring
+      ignore_errors: yes
+      become_user: azureuser
 
-   - name: Install Prometheus
-     command: >
-       helm install prometheus prometheus-community/kube-prometheus-stack
-       --namespace monitoring
-       -f ../kubernetes/prometheus-values.yaml
-     become_user: azureuser
-     ignore_errors: yes
+    # Déploiement des manifests WebGoat
+    - name: Deploy WebGoat resources
+      command: kubectl apply -f {{ item }}
+      with_items:
+        - manifests/resource-quota.yml
+        - manifests/service-account.yml
+        - manifests/network-policy.yml
+        - manifests/deployment.yml
+        - manifests/service.yml
+      become_user: azureuser
 
-   - name: Install Grafana
-     command: >
-       helm install grafana grafana/grafana
-       --namespace monitoring
-       -f ../kubernetes/grafana-values.yaml
-     become_user: azureuser
-     ignore_errors: yes
+    # Installation Prometheus et Grafana
+    - name: Add Helm repositories
+      command: "{{ item }}"
+      with_items:
+        - helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        - helm repo add grafana https://grafana.github.io/helm-charts
+        - helm repo update
+      become_user: azureuser
 
-   # Vérification des déploiements
-   - name: Wait for pods
-     shell: |
-       kubectl wait --for=condition=Ready pods --all -n webgoat --timeout=300s
-       kubectl wait --for=condition=Ready pods --all -n monitoring --timeout=300s
-     become_user: azureuser
-     ignore_errors: yes
+    - name: Install Prometheus
+      command: >
+        helm install prometheus prometheus-community/kube-prometheus-stack
+        --namespace monitoring
+        -f ../kubernetes/prometheus-values.yaml
+      become_user: azureuser
+      ignore_errors: yes
 
-   - name: Get deployment status
-     shell: |
-       echo "=== Nodes ==="
-       kubectl get nodes
-       echo "=== Pods ==="
-       kubectl get pods --all-namespaces
-       echo "=== Services ==="
-       kubectl get services --all-namespaces
-     register: deployment_status
-     become_user: azureuser
+    - name: Install Grafana
+      command: >
+        helm install grafana grafana/grafana
+        --namespace monitoring
+        -f ../kubernetes/grafana-values.yaml
+      become_user: azureuser
+      ignore_errors: yes
 
-   - name: Show deployment status
-     debug:
-       var: deployment_status.stdout_lines
+    # Vérification des déploiements
+    - name: Wait for pods
+      shell: |
+        kubectl wait --for=condition=Ready pods --all -n webgoat --timeout=300s
+        kubectl wait --for=condition=Ready pods --all -n monitoring --timeout=300s
+      become_user: azureuser
+      ignore_errors: yes
 
-   - name: Get service URLs
-     shell: |
-       echo "WebGoat URL: http://$(curl -s ifconfig.me):$(kubectl get svc -n webgoat webgoat -o jsonpath='{.spec.ports[0].nodePort}')"
-       echo "Grafana URL: http://$(curl -s ifconfig.me):$(kubectl get svc -n monitoring grafana -o jsonpath='{.spec.ports[0].nodePort}')"
-     register: service_urls
-     become_user: azureuser
-     ignore_errors: yes
+    - name: Get deployment status
+      shell: |
+        echo "=== Nodes ==="
+        kubectl get nodes
+        echo "=== Pods ==="
+        kubectl get pods --all-namespaces
+        echo "=== Services ==="
+        kubectl get services --all-namespaces
+      register: deployment_status
+      become_user: azureuser
 
-   - name: Display service URLs
-     debug:
-       var: service_urls.stdout_lines
+    - name: Show deployment status
+      debug:
+        var: deployment_status.stdout_lines
+
+    - name: Get service URLs
+      shell: |
+        echo "WebGoat URL: http://$(curl -s ifconfig.me):$(kubectl get svc -n webgoat webgoat -o jsonpath='{.spec.ports[0].nodePort}')"
+        echo "Grafana URL: http://$(curl -s ifconfig.me):$(kubectl get svc -n monitoring grafana -o jsonpath='{.spec.ports[0].nodePort}')"
+      register: service_urls
+      become_user: azureuser
+      ignore_errors: yes
+
+    - name: Display service URLs
+      debug:
+        var: service_urls.stdout_lines
