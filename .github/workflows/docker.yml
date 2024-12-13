@@ -11,7 +11,7 @@ on:
       - develop
 
 env:
-  IMAGE_NAME: LOG8100_Projet/webgoat
+  IMAGE_NAME: log8100_projet/webgoat
   DOCKER_BUILDKIT: 1
 
 jobs:
