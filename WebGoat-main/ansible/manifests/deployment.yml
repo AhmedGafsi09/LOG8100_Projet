@@ -1,35 +1,45 @@
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: webgoat
-  namespace: webgoat
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: webgoat
-  template:
-    metadata:
-      labels:
-        app: webgoat
-    spec:
-      serviceAccountName: webgoat-sa
-      containers:
-      - name: webgoat
-        image: webgoat/webgoat:latest
-        ports:
-        - containerPort: 8080
-          name: http
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "500m"
-          limits:
-            memory: "1Gi"
-            cpu: "1"
-        startupProbe:
-          tcpSocket:
-            port: 8080
-          initialDelaySeconds: 60
-          periodSeconds: 10
-          failureThreshold: 30
+
+- name: Deploy WebGoat
+  hosts: azure-vm
+  become: yes
+  tasks:
+    - name: Create manifests directory
+      file:
+        path: /root/manifests
+        state: directory
+
+    - name: Copy Kubernetes manifests
+      copy:
+        src: "manifests/"
+        dest: "/root/manifests/"
+
+    - name: Create namespace
+      command: kubectl create namespace webgoat
+      ignore_errors: true
+
+    - name: Apply Kubernetes manifests
+      command: kubectl apply -f "/root/manifests/{{ item }}"
+      with_items:
+        - resource-quota.yml
+        - service-account.yml
+        - network-policy.yml
+        - health-check.yml
+        - deployment.yml
+        - service.yml
+
+    - name: Wait for pods
+      command: kubectl get pods -n webgoat
+      register: pod_status
+      until: "'Running' in pod_status.stdout"
+      retries: 30
+      delay: 10
+
+    - name: Display service information
+      command: kubectl get svc -n webgoat
+      register: service_info
+      
+    - name: Show access information
+      debug:
+        msg: 
+          - "WebGoat sera accessible sur :"
+          - "http://{{ ansible_host }}:{{ service_info.stdout.split('NodePort')[1].split('/')[0].strip() }}"

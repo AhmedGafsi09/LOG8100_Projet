@@ -1,101 +1,34 @@
----
-- name: Configure Kubernetes Cluster
-  hosts: localhost
-  connection: local
+- name: Install and Configure Kubernetes
+  hosts: azure-vm
+  become: yes
   tasks:
-    - name: Verify Kubernetes cluster is running
-      command: kubectl cluster-info
-      register: cluster_info
-      changed_when: false
+    # Installation des prérequis
+    - name: Install dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - docker.io
+        state: present
+        update_cache: yes
 
-    - name: Create WebGoat namespace
-      command: kubectl create namespace webgoat
-      ignore_errors: true
+    # Configuration de Kubernetes
+    - name: Add Kubernetes apt key
+      apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
 
-    - name: Apply resource quota
-      command: kubectl apply -f manifests/resource-quota.yml
-      args:
-        chdir: "{{ playbook_dir }}"
+    - name: Add Kubernetes repository
+      apt_repository:
+        repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+        state: present
 
-    - name: Apply service account and role
-      command: kubectl apply -f manifests/service-account.yml
-      args:
-        chdir: "{{ playbook_dir }}"
-
-    - name: Apply network policy
-      command: kubectl apply -f manifests/network-policy.yml
-      args:
-        chdir: "{{ playbook_dir }}"
-
-    - name: Apply health check config
-      command: kubectl apply -f manifests/health-check.yml
-      args:
-        chdir: "{{ playbook_dir }}"
-
-    - name: Deploy WebGoat application
-      command: kubectl apply -f manifests/deployment.yml
-      args:
-        chdir: "{{ playbook_dir }}"
-
-    - name: Create WebGoat service
-      command: kubectl apply -f manifests/service.yml
-      args:
-        chdir: "{{ playbook_dir }}"
-
-    - name: Verify deployment status
-      command: kubectl get deployment webgoat -n webgoat
-      register: deployment_status
-      changed_when: false
-      ignore_errors: true
-      until: deployment_status.rc == 0
-      retries: 10
-      delay: 10
-
-    - name: Display deployment status
-      debug:
-        msg: "{{ deployment_status.stdout_lines }}"
-      when: deployment_status.rc == 0
-
-    - name: Wait for pod to be created
-      command: kubectl get pods -n webgoat -l app=webgoat
-      register: pod_status
-      changed_when: false
-      until: pod_status.stdout.find("Running") != -1 or pod_status.stdout.find("ContainerCreating") != -1
-      retries: 15
-      delay: 10
-
-    - name: Display pod status
-      command: kubectl get pods -n webgoat -l app=webgoat -o wide
-      register: pod_details
-      changed_when: false
-
-    - name: Show pod details
-      debug:
-        var: pod_details.stdout_lines
-
-    - name: Check services
-      command: kubectl get svc -n webgoat
-      register: service_status
-      changed_when: false
-
-    - name: Display service status
-      debug:
-        var: service_status.stdout_lines
-
-    - name: Display access instructions
-      debug:
-        msg: 
-          - "To access WebGoat locally, run:"
-          - "kubectl port-forward svc/webgoat -n webgoat 8080:8080"
-          - "Then access http://localhost:8080/WebGoat"
-
-    - name: Check pod logs for startup issues
-      command: kubectl logs -n webgoat -l app=webgoat --tail=50
-      register: pod_logs
-      ignore_errors: true
-      changed_when: false
-
-    - name: Display pod logs
-      debug:
-        var: pod_logs.stdout_lines
-      when: pod_logs is success
+    - name: Install Kubernetes packages
+      apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
