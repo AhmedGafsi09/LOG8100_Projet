@@ -11,12 +11,22 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+      
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" > kubeconfig
+          export KUBECONFIG=kubeconfig
+      
       - name: Deploy to Kubernetes
         run: |
           kubectl apply -f WebGoat-main/kubernetes/ --validate=false
           
       - name: Setup Monitoring
         run: |
-          kubectl create namespace monitoring
+          kubectl create namespace monitoring || true
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
           helm install prometheus prometheus-community/kube-prometheus-stack -f WebGoat-main/prometheus/prometheus-kube.yml
