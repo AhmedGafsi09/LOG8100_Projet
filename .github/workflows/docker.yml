@@ -29,16 +29,6 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Install Maven 3.8.1
-        run: |
-          curl https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.8.1/apache-maven-3.8.1-bin.zip
-          unzip apache-maven-3.8.1-bin.zip
-          mv apache-maven-3.8.1 /opt/maven
-          echo "export PATH=/opt/maven/bin:$PATH" >> $HOME/.bashrc
-          source $HOME/.bashrc
-        env:
-          PATH: /opt/maven/bin:$PATH
-
       - name: Cache Maven Dependencies
         uses: actions/cache@v3
         with:
