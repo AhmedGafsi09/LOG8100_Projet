@@ -2,7 +2,7 @@
   hosts: azure-vm
   become: yes
   tasks:
-    # Installation des prérequis
+    # Ensure dependencies are installed
     - name: Install dependencies
       apt:
         name:
@@ -10,25 +10,61 @@
           - ca-certificates
           - curl
           - software-properties-common
-          - docker.io
         state: present
         update_cache: yes
 
-    # Configuration de Kubernetes
-    - name: Add Kubernetes apt key
-      apt_key:
-        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+    # Download kubeadm, kubectl, kubelet packages
+    - name: Download Kubernetes kubeadm package
+      get_url:
+        url: https://packages.cloud.google.com/apt/pool/kubeadm_1.29.12-00_amd64.deb
+        dest: /tmp/kubeadm.deb
+
+    - name: Download Kubernetes kubectl package
+      get_url:
+        url: https://packages.cloud.google.com/apt/pool/kubectl_1.29.12-00_amd64.deb
+        dest: /tmp/kubectl.deb
+
+    - name: Download Kubernetes kubelet package
+      get_url:
+        url: https://packages.cloud.google.com/apt/pool/kubelet_1.29.12-00_amd64.deb
+        dest: /tmp/kubelet.deb
+
+    # Install Kubernetes packages
+    - name: Install kubeadm
+      apt:
+        deb: /tmp/kubeadm.deb
         state: present
 
-    - name: Add Kubernetes repository
-      apt_repository:
-        repo: deb https://apt.kubernetes.io/ kubernetes-focal main
+    - name: Install kubectl
+      apt:
+        deb: /tmp/kubectl.deb
         state: present
 
-    - name: Install Kubernetes packages
+    - name: Install kubelet
+      apt:
+        deb: /tmp/kubelet.deb
+        state: present
+
+    # Hold the versions to prevent auto-upgrade
+    - name: Hold kubeadm, kubectl, kubelet versions
       apt:
         name:
-          - kubelet
           - kubeadm
           - kubectl
+          - kubelet
         state: present
+        allow_downgrade: yes
+        update_cache: no
+        force: yes
+      loop_control:
+        loop_var: pkg
+
+    # Verify installation
+    - name: Check Kubernetes version
+      command: kubectl version --client
+      register: kubectl_version
+      changed_when: false
+
+    - name: Display Kubernetes version
+      debug:
+        msg: "{{ kubectl_version.stdout }}"
