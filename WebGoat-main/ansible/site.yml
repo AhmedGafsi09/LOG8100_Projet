@@ -15,7 +15,6 @@
         update_cache: yes
         state: present
 
-    # Configuration Docker
     - name: Add Docker GPG key
       apt_key:
         url: https://download.docker.com/linux/ubuntu/gpg
@@ -31,17 +30,24 @@
         name: docker-ce
         state: present
 
-    # Configuration Kubernetes
-    - name: Add Kubernetes GPG key
-      apt_key:
-        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
-        state: present
+    # Nouvelle configuration Kubernetes
+    - name: Create directory for keyrings
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download Kubernetes GPG key
+      get_url:
+        url: https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key
+        dest: /etc/apt/keyrings/kubernetes-apt-keyring.asc
+        mode: '0644'
 
     - name: Add Kubernetes repository
       apt_repository:
-        repo: deb http://apt.kubernetes.io/ kubernetes-xenial main
+        repo: deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.asc] https://pkgs.k8s.io/core:/stable:/v1.29/deb/
         state: present
-        filename: kubernetes.list
+        filename: kubernetes
 
     - name: Install Kubernetes packages
       apt:
@@ -63,7 +69,7 @@
     # Configuration Système
     - name: Disable swap
       command: swapoff -a
-      
+
     - name: Remove swap from fstab
       replace:
         path: /etc/fstab
