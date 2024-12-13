@@ -77,20 +77,25 @@ jobs:
           # Apply WebGoat configuration
           kubectl apply -f LOG8100_Projet/WebGoat-main/kubernetes/webgoat-pod.yaml
 
-      - name: Wait for Deployments to Stabilize
+      - name: Wait for Deployments
         run: |
-          kubectl rollout status deployment/prometheus-kube-prometheus-operator -n monitoring --timeout=300s
-          kubectl rollout status statefulset/prometheus-kube-prom-prometheus -n monitoring --timeout=300s
-          kubectl rollout status deployment/grafana -n monitoring --timeout=300s
-          kubectl rollout status pod -n webgoat --selector=app=webgoat --timeout=300s
-
-      - name: Verify Monitoring and WebGoat Services
+            ssh -o StrictHostKeyChecking=no -i aks-node-1_key.pem azureuser@20.63.16.243 <<EOF
+            export KUBECONFIG=/home/azureuser/.kube/config
+            kubectl rollout status deployment/prometheus-kube-prometheus-operator -n monitoring --timeout=300s
+            kubectl rollout status deployment/grafana -n monitoring --timeout=300s
+            kubectl rollout status pod -n webgoat --selector=app=webgoat --timeout=300s
+            EOF
+            
+      - name: Verify Services
         run: |
-          kubectl get all -n monitoring
-          kubectl get all -n webgoat
-          echo "Access Prometheus: http://localhost:30090"
-          echo "Access Grafana: http://localhost:30300"
-          echo "WebGoat Service Available"
+              ssh -o StrictHostKeyChecking=no -i aks-node-1_key.pem azureuser@20.63.16.243 <<EOF
+              export KUBECONFIG=/home/azureuser/.kube/config
+              kubectl get all -n monitoring
+              kubectl get all -n webgoat
+              echo "Prometheus: http://20.63.16.243:9090"
+              echo "Grafana: http://20.63.16.243:30300"
+              echo "WebGoat: http://20.63.16.243:8080"
+              EOF
 
       - name: Debug Information
         if: always()
