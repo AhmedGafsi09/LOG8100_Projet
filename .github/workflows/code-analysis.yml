@@ -1,4 +1,3 @@
-
 name: Code Analysis
 
 on:
@@ -47,8 +46,10 @@ jobs:
 
       - name: Check for Critical Vulnerabilities and Send Discord Alert
         run: |
-          if [ "$(curl -s -X GET "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=WebGoat&types=VULNERABILITY&severities=CRITICAL&resolved=false" | jq '.total')" -gt 0 ]; then
+          VULNERABILITIES=$(curl -s -X GET "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=WebGoat&types=VULNERABILITY&severities=CRITICAL&resolved=false" | jq '.total')
+          echo "Detected Critical Vulnerabilities: $VULNERABILITIES"
+          if [ "$VULNERABILITIES" -gt 0 ]; then
             curl -X POST -H "Content-Type: application/json" \
-              -d '{"content": "A critical vulnerability has been detected in the WebGoat project!"}' \
+              -d '{"content": "A critical vulnerability has been detected in the WebGoat project! Total critical vulnerabilities: '"$VULNERABILITIES"'."}' \
               ${{ secrets.DISCORD_WEBHOOK_URL }}
           fi
