@@ -1,0 +1,35 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: webgoat-alerts
+  namespace: monitoring
+spec:
+  groups:
+  - name: webgoat.rules
+    rules:
+    - alert: WebGoatHighCPU
+      expr: sum(rate(container_cpu_usage_seconds_total{container="webgoat"}[5m])) by (pod) > 0.8
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "WebGoat pod {{ $labels.pod }} CPU usage high"
+        description: "{{ $labels.pod }} has been using more than 80% CPU for 5 minutes"
+
+    - alert: WebGoatHighMemory
+      expr: sum(container_memory_usage_bytes{container="webgoat"}) by (pod) / sum(container_memory_limit_bytes{container="webgoat"}) by (pod) * 100 > 85
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "WebGoat pod {{ $labels.pod }} memory usage high"
+        description: "{{ $labels.pod }} is using more than 85% of its memory limit"
+
+    - alert: WebGoatPodRestarting
+      expr: increase(kube_pod_container_status_restarts_total{container="webgoat"}[1h]) > 2
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "WebGoat pod restarting frequently"
+        description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in the last hour"

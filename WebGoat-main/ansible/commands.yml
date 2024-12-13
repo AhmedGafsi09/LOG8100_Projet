@@ -1,0 +1,19 @@
+---
+- name: Execute basic commands
+  hosts: all
+  tasks:
+    - name: Get current directory
+      command: pwd
+      register: pwd_output
+
+    - name: Show current directory
+      debug:
+        msg: "Current directory: {{ pwd_output.stdout }}"
+
+    - name: Get current user
+      command: whoami
+      register: whoami_output
+
+    - name: Show current user
+      debug:
+        msg: "Current user: {{ whoami_output.stdout }}"

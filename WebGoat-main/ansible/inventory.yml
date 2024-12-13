@@ -1,7 +1,7 @@
 all:
-  children:
-    master:
-      hosts:
-        localhost:
-          ansible_connection: local
-          ansible_python_interpreter: /usr/bin/python3
+  hosts:
+    azure-vm:
+      ansible_host: 20.63.16.243
+      ansible_user: azureuser
+      ansible_ssh_private_key_file: ./aks-node-1_key.pem
+      ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
