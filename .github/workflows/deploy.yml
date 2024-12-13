@@ -75,26 +75,21 @@ jobs:
           kubectl create namespace webgoat || true
           kubectl apply -f LOG8100_Projet/WebGoat-main/kubernetes/webgoat-deployment.yml
           kubectl apply -f LOG8100_Projet/WebGoat-main/kubernetes/webgoat-service.yml
-          
+
       - name: Wait for Deployments
         run: |
             ssh -o StrictHostKeyChecking=no -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 <<EOF
             export KUBECONFIG=/home/azureuser/.kube/config
-            kubectl rollout status deployment/prometheus-kube-prometheus-operator -n monitoring --timeout=300s
-            kubectl rollout status deployment/grafana -n monitoring --timeout=300s
-            kubectl rollout status pod -n webgoat --selector=app=webgoat --timeout=300s
+            kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
             EOF
             
       - name: Verify Services
         run: |
-              ssh -o StrictHostKeyChecking=no -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 <<EOF
-              export KUBECONFIG=/home/azureuser/.kube/config
-              kubectl get all -n monitoring
-              kubectl get all -n webgoat
-              echo "Prometheus: http://20.63.16.243:9090"
-              echo "Grafana: http://20.63.16.243:30300"
-              echo "WebGoat: http://20.63.16.243:8080"
-              EOF
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 <<EOF
+          export KUBECONFIG=/home/azureuser/.kube/config
+          kubectl get all -n monitoring
+          kubectl get all -n webgoat
+          EOF
 
       - name: Debug Information
         if: always()
