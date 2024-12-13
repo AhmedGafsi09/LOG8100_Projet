@@ -37,4 +37,4 @@ data:
         receivers:
         - name: 'discord'
           webhook_configs:
-          - url: '${DISCORD_WEBHOOK_URL}'  # À remplacer par une variable d'environnement
+          - url: '${DISCORD_WEBHOOK_URL}' 
