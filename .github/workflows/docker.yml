@@ -11,7 +11,7 @@ on:
       - develop
 
 env:
-  IMAGE_NAME: log8100_projet/webgoat
+  IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/log8100_projet
   DOCKER_BUILDKIT: 1
 
 jobs:
