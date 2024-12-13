@@ -36,12 +36,16 @@ jobs:
           minikube update-context
           kubectl cluster-info
 
+      - name: Set up SSH private key
+        run: |
+            mkdir -p ~/.ssh
+            echo "${{ secrets.VM_PRIVATE_KEY }}" > ~/.ssh/aks-node-1_key.pem
+            chmod 600 ~/.ssh/aks-node-1_key.pem
+  
       - name: Run Ansible Playbook
         run: |
-          cd LOG8100_Projet/WebGoat-main/ansible
-          ansible-playbook -i inventory.yml site.yml
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: false
+            cd LOG8100_Projet/WebGoat-main/ansible
+            ansible-playbook -i inventory.yml playbook.yml --key-file ~/.ssh/aks-node-1_key.pem
 
       - name: Setup Monitoring
         run: |

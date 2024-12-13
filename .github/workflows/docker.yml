@@ -29,10 +29,10 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Set up Maven 3.9
-        uses: actions/setup-maven@v3
+      - name: Set up Maven 3.8.1
+        uses: s4u/maven-action@v2
         with:
-          maven-version: '3.9.0'
+          maven-version: '3.8.1'
           cache: 'local'
 
       - name: Cache Maven Dependencies
@@ -61,7 +61,7 @@ jobs:
           docker tag $IMAGE_NAME:latest $IMAGE_NAME:${{ github.sha }}
 
       - name: Scan Docker Image with Trivy
-        uses: aquasecurity/trivy-action@v0.11.2
+        uses: aquasecurity/trivy-action@v0.11.0
         with:
           image-ref: $IMAGE_NAME:latest
           format: 'table'
