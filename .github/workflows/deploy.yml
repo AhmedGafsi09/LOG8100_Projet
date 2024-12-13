@@ -27,6 +27,6 @@ jobs:
       - name: Run Ansible Playbook
         run: |
           cd LOG8100_Projet/WebGoat-main/ansible
-          ansible-playbook -i inventory.yml site.yml
+          ansible-playbook -i inventory.yml site.yml -vvv
         env:
           ANSIBLE_HOST_KEY_CHECKING: false
