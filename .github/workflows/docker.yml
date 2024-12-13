@@ -29,11 +29,17 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Set up Maven 3.8.1
-        uses: s4u/maven-action@v2
-        with:
-          maven-version: '3.8.1'
-          cache: 'local'
+      - name: Install Maven 3.8.1
+        run: |
+          sudo apt update
+          sudo apt install -y unzip
+          wget https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.8.1/apache-maven-3.8.1-bin.zip
+          unzip apache-maven-3.8.1-bin.zip
+          sudo mv apache-maven-3.8.1 /opt/maven
+          echo "export PATH=/opt/maven/bin:$PATH" >> $HOME/.bashrc
+          source $HOME/.bashrc
+        env:
+          PATH: /opt/maven/bin:$PATH
 
       - name: Cache Maven Dependencies
         uses: actions/cache@v3
@@ -61,7 +67,7 @@ jobs:
           docker tag $IMAGE_NAME:latest $IMAGE_NAME:${{ github.sha }}
 
       - name: Scan Docker Image with Trivy
-        uses: aquasecurity/trivy-action@v0.11.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: $IMAGE_NAME:latest
           format: 'table'
