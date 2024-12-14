@@ -148,6 +148,30 @@
         lsof -ti:6443 | xargs kill -9 || true
       ignore_errors: yes
 
+    # Complete cleanup of Kubernetes
+    - name: Complete cleanup of Kubernetes
+      shell: |
+        systemctl stop kubelet
+        systemctl stop docker || true
+        systemctl stop containerd
+        rm -rf /etc/kubernetes/*
+        rm -rf /var/lib/kubelet/*
+        rm -rf /var/lib/etcd
+        rm -rf /var/run/kubernetes
+        rm -rf /var/lib/cni/
+        rm -rf /etc/cni/
+        ip link delete cni0 || true
+        ip link delete flannel.1 || true
+        systemctl start containerd
+        systemctl start docker || true
+      ignore_errors: yes
+
+    - name: Reset crictl
+      shell: |
+        crictl rm -f $(crictl ps -aq) || true
+        crictl rmi -f $(crictl images -q) || true
+      ignore_errors: yes
+
     # Stop and cleanup services
     - name: Stop all services
       systemd:
@@ -226,95 +250,71 @@
       shell: |
         kubeadm init \
         --pod-network-cidr=192.168.0.0/16 \
+        --upload-certs \
         --ignore-preflight-errors=all \
-        --cri-socket unix:///run/containerd/containerd.sock \
         --v=5 \
+        --cri-socket unix:///run/containerd/containerd.sock \
+        --skip-phases=addon/kube-proxy \
         2>&1 | tee /var/log/kubeadm-init.log
       register: kubeadm_init
       ignore_errors: yes
 
-    - name: Show kubeadm init log
-      command: cat /var/log/kubeadm-init.log
-      register: init_log
-      when: kubeadm_init.rc != 0
-
-    # Configure kubectl for user
-    - name: Wait for kubeconfig
-      wait_for:
-        path: /etc/kubernetes/admin.conf
-        state: present
-        timeout: 60
+    - name: Get init logs
+      shell: |
+        echo "=== Kubeadm Init Log ==="
+        cat /var/log/kubeadm-init.log
+        echo "=== Kubelet Status ==="
+        systemctl status kubelet
+        echo "=== Kubelet Logs ==="
+        journalctl -u kubelet --no-pager | tail -n 50
+      register: init_logs
       ignore_errors: yes
 
-    - name: Copy kube config
-      shell: |
-        mkdir -p /home/azureuser/.kube
-        cp -f /etc/kubernetes/admin.conf /home/azureuser/.kube/config
-        chown -R azureuser:azureuser /home/azureuser/.kube
-      when: kubeadm_init.rc == 0
-
-    # Check etcd and API server pods
-    - name: Check etcd and API server pods
-      shell: |
-        mkdir -p /etc/kubernetes/manifests/backup
-        mv /etc/kubernetes/manifests/* /etc/kubernetes/manifests/backup/
-        systemctl restart kubelet
-        sleep 10
-        mv /etc/kubernetes/manifests/backup/* /etc/kubernetes/manifests/
-        rm -rf /etc/kubernetes/manifests/backup
-        systemctl restart kubelet
-      ignore_errors: yes
-
-    - name: Wait for control plane pods
-      shell: |
-        for i in $(seq 1 30); do
-          echo "Attempt $i: Checking control plane pods..."
-          if crictl ps | grep -q "kube-apiserver"; then
-            echo "API server is running"
-            if crictl ps | grep -q "etcd"; then
-              echo "etcd is running"
-              exit 0
-            fi
-          fi
-          sleep 10
-        done
-        exit 1
-      register: control_plane_check
-      ignore_errors: yes
-
-    - name: Get pod logs
-      shell: |
-        echo "=== API Server Logs ==="
-        crictl logs $(crictl ps -q --name kube-apiserver) || true
-        echo "=== etcd Logs ==="
-        crictl logs $(crictl ps -q --name etcd) || true
-      register: pod_logs
-      ignore_errors: yes
-
-    - name: Display pod logs
+    - name: Display init logs
       debug:
-        var: pod_logs.stdout_lines
+        var: init_logs.stdout_lines
 
-    - name: Fix etcd permissions
+    # Verify control plane components
+    - name: Verify control plane components
       shell: |
-        chmod 600 /etc/kubernetes/pki/etcd/peer.*
-        chmod 600 /etc/kubernetes/pki/etcd/server.*
-        chmod 600 /etc/kubernetes/pki/etcd/ca.*
-        chown -R root:root /etc/kubernetes/pki/etcd/
-        systemctl restart kubelet
+        mkdir -p /tmp/k8s-debug
+        echo "=== Static Pod Manifests ==="
+        ls -l /etc/kubernetes/manifests/
+        echo "=== Certificates ==="
+        ls -l /etc/kubernetes/pki/
+        echo "=== Container Status ==="
+        crictl ps -a
+        echo "=== Container Logs ==="
+        for pod in $(crictl ps -a -q); do
+          echo "=== Logs for $pod ==="
+          crictl logs $pod || true
+        done
+      register: verification
       ignore_errors: yes
 
-    - name: Final wait for API server
+    - name: Display verification
+      debug:
+        var: verification.stdout_lines
+
+    - name: Wait for API server socket
+      wait_for:
+        path: /var/run/kubernetes/apiserver.sock
+        timeout: 300
+      ignore_errors: yes
+
+    # Check API server status
+    - name: Check API server status
       shell: |
-        for i in $(seq 1 20); do
-          if kubectl get nodes; then
+        for i in {1..30}; do
+          if nc -z localhost 6443; then
+            echo "API server is listening on port 6443"
             exit 0
           fi
+          echo "Waiting for API server... attempt $i"
           sleep 10
         done
         exit 1
-      become_user: azureuser
-      register: final_check
+      register: api_check
       ignore_errors: yes
 
     - name: Remove master node taint
