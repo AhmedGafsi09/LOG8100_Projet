@@ -132,6 +132,14 @@
         owner: azureuser
         group: azureuser
         mode: '0600'
+      when: kubeadm_init.rc == 0
+
+    # Installation Calico CNI avec vérification
+    - name: Download Calico manifest
+      get_url:
+        url: https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/calico.yaml
+        dest: /home/azureuser/calico.yaml
+      become_user: azureuser
 
     # Installation Calico CNI
     - name: Install Calico network
@@ -144,6 +152,15 @@
         curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
         chmod 700 get_helm.sh
         ./get_helm.sh
+
+    # Attendre que les pods Calico soient prêts
+    - name: Wait for Calico pods
+      command: kubectl wait --for=condition=Ready pods --all -n kube-system --timeout=300s
+      become_user: azureuser
+      register: calico_pods
+      retries: 10
+      delay: 30
+      until: calico_pods.rc == 0
 
     # Création des namespaces
     - name: Create namespaces
