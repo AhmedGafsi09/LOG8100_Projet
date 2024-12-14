@@ -214,37 +214,80 @@
         iptables -P OUTPUT ACCEPT
       ignore_errors: yes
 
-    # Initialize Kubernetes (initial phase)
-    - name: Initialize Kubernetes (initial phase)
+    # Configure crictl
+    - name: Configure crictl
       shell: |
-        kubeadm init phase preflight --v=5
-        kubeadm init phase kubelet-start --v=5
-        kubeadm init phase kubeconfig all --v=5
-      register: init_phase
+        cat > /etc/crictl.yaml << EOF
+        runtime-endpoint: unix:///run/containerd/containerd.sock
+        image-endpoint: unix:///run/containerd/containerd.sock
+        timeout: 10
+        debug: true
+        EOF
       ignore_errors: yes
 
-    - name: Show phase results
-      debug:
-        var: init_phase.stdout_lines
+    # Verify kubelet configuration
+    - name: Verify kubelet configuration
+      shell: |
+        mkdir -p /etc/kubernetes/manifests
+        echo "=== Kubelet Configuration ==="
+        cat > /var/lib/kubelet/config.yaml << EOF
+        apiVersion: kubelet.config.k8s.io/v1beta1
+        kind: KubeletConfiguration
+        cgroupDriver: systemd
+        EOF
+        
+        systemctl restart kubelet
+        systemctl status kubelet
+      register: kubelet_config
+      ignore_errors: yes
 
-    - name: Initialize full cluster
+    - name: Initialize Kubernetes with explicit paths
       shell: |
         kubeadm init \
-        --pod-network-cidr=192.168.0.0/16 \
-        --upload-certs \
-        --ignore-preflight-errors=all \
-        --v=5 \
-        --cri-socket=unix:///run/containerd/containerd.sock \
-        2>&1 | tee /var/log/kubeadm-init.log
+          --pod-network-cidr=192.168.0.0/16 \
+          --upload-certs \
+          --ignore-preflight-errors=all \
+          --v=5 \
+          --cri-socket=unix:///run/containerd/containerd.sock \
+          --config=/var/lib/kubelet/config.yaml \
+          --skip-phases=addon/kube-proxy \
+          2>&1 | tee /var/log/kubeadm-init.log
       register: kubeadm_init
+      ignore_errors: yes
 
-    - name: Display init log
-      command: cat /var/log/kubeadm-init.log
-      register: init_log
+    - name: Check kubelet logs
+      shell: |
+        echo "=== Kubelet Status ==="
+        systemctl status kubelet
+        echo "=== Kubelet Logs ==="
+        journalctl -u kubelet --no-pager | tail -n 50
+        echo "=== Manifest Directory ==="
+        ls -l /etc/kubernetes/manifests/
+      register: kubelet_status
+      ignore_errors: yes
 
-    - name: Show init log
+    - name: Display kubelet status
       debug:
-        var: init_log.stdout_lines
+        var: kubelet_status.stdout_lines
+
+    - name: Wait for API server pod
+      shell: |
+        for i in $(seq 1 30); do
+          if crictl ps | grep kube-apiserver; then
+            echo "API server pod is running"
+            crictl logs $(crictl ps | grep kube-apiserver | awk '{print $1}')
+            exit 0
+          fi
+          echo "Waiting for API server pod... attempt $i"
+          sleep 10
+        done
+        exit 1
+      register: api_wait
+      ignore_errors: yes
+
+    - name: Show API server wait results
+      debug:
+        var: api_wait.stdout_lines
 
     # Pre-pull required images
     - name: Pre-pull required images
@@ -299,3 +342,11 @@
         for container in $(crictl ps -a | grep kube-apiserver | awk '{print $1}'); do
           echo "Container ID: $container"
           crictl inspect $container
+          crictl logs $container
+        done
+      register: detailed_logs
+      ignore_errors: yes
+
+    - name: Display detailed logs
+      debug:
+        var: detailed_logs.stdout_lines
