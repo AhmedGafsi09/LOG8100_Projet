@@ -127,7 +127,7 @@
         - 30000
         - 32767  # NodePort range
 
-    # Reset and cleanup existing Kubernetes installation
+# Reset and cleanup existing Kubernetes installation
     - name: Reset Kubernetes cluster
       command: kubeadm reset --force
       ignore_errors: yes
@@ -253,6 +253,36 @@
         chown -R azureuser:azureuser /home/azureuser/.kube
       when: kubeadm_init.rc == 0
 
+    # Wait for API server
+    - name: Wait for Kubernetes API server
+      shell: |
+        until kubectl get nodes; do
+          sleep 5
+          echo "Waiting for Kubernetes API server..."
+        done
+      become_user: azureuser
+      register: api_check
+      retries: 30
+      delay: 10
+      until: api_check.rc == 0
+
+    - name: Remove master node taint
+      command: kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+      become_user: azureuser
+      ignore_errors: yes
+
+    - name: Verify cluster info
+      command: kubectl cluster-info
+      become_user: azureuser
+      register: cluster_info
+      retries: 10
+      delay: 10
+      until: cluster_info.rc == 0
+
+    - name: Display cluster info
+      debug:
+        var: cluster_info.stdout_lines
+
     # Install Calico CNI
     - name: Download Calico manifest
       get_url:
@@ -260,9 +290,21 @@
         dest: /home/azureuser/calico.yaml
       become_user: azureuser
 
-    - name: Install Calico network
-      command: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/calico.yaml --validate=false
+    - name: Install Calico manifest locally
+      command: kubectl apply -f /home/azureuser/calico.yaml --validate=false
       become_user: azureuser
+      retries: 3
+      delay: 10
+
+    - name: Wait for Calico pods
+      shell: |
+        kubectl -n kube-system wait --for=condition=Ready pods -l k8s-app=calico-node --timeout=300s
+        kubectl -n kube-system wait --for=condition=Ready pods -l k8s-app=calico-kube-controllers --timeout=300s
+      become_user: azureuser
+      register: calico_pods
+      retries: 10
+      delay: 30
+      until: calico_pods.rc == 0
 
     # Install Helm
     - name: Download and install Helm
@@ -270,15 +312,6 @@
         curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
         chmod 700 get_helm.sh
         ./get_helm.sh
-
-    # Wait for pods
-    - name: Wait for Calico pods
-      command: kubectl wait --for=condition=Ready pods --all -n kube-system --timeout=300s
-      become_user: azureuser
-      register: calico_pods
-      retries: 10
-      delay: 30
-      until: calico_pods.rc == 0
 
     # Create namespaces
     - name: Create namespaces
