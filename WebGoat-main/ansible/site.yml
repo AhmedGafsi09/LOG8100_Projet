@@ -5,13 +5,39 @@
   vars:
     ansible_python_interpreter: /usr/bin/python3
   tasks:
-    # Nettoyage des anciens fichiers
+    # Cleanup previous installations
     - name: Remove old Kubernetes sources
       file:
         path: /etc/apt/sources.list.d/kubernetes.list
         state: absent
 
-    # Installation des prérequis
+    - name: Remove Kubernetes directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /etc/kubernetes/manifests
+        - /etc/kubernetes/pki
+        - /var/lib/kubelet
+        - /var/lib/etcd
+        - /etc/cni
+        - /var/lib/cni
+      ignore_errors: yes
+
+    - name: Clean iptables rules
+      shell: |
+        iptables -F
+        iptables -X
+        iptables -t nat -F
+        iptables -t nat -X
+        iptables -t mangle -F
+        iptables -t mangle -X
+        iptables -P INPUT ACCEPT
+        iptables -P FORWARD ACCEPT
+        iptables -P OUTPUT ACCEPT
+      ignore_errors: yes
+
+    # Install dependencies
     - name: Install dependencies
       apt:
         name:
@@ -23,13 +49,7 @@
         update_cache: yes
         state: present
 
-    # Configuration Docker
-    - name: Ensure /usr/share/keyrings exists
-      file:
-        path: /usr/share/keyrings
-        state: directory
-        mode: '0755'
-
+    # Configure Docker
     - name: Add Docker GPG key
       get_url:
         url: https://download.docker.com/linux/ubuntu/gpg
@@ -40,13 +60,7 @@
       shell: |
         echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-    # Configuration Kubernetes
-    - name: Ensure /etc/apt/keyrings exists
-      file:
-        path: /etc/apt/keyrings
-        state: directory
-        mode: '0755'
-
+    # Configure Kubernetes
     - name: Add Kubernetes GPG key
       get_url:
         url: https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key
@@ -57,7 +71,7 @@
       shell: |
         echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list > /dev/null
 
-    - name: Update apt and install packages
+    - name: Install Docker and Kubernetes packages
       apt:
         name:
           - docker-ce
@@ -68,7 +82,7 @@
         update_cache: yes
         state: present
 
-    # Configuration système
+    # Configure Docker daemon
     - name: Configure Docker daemon
       copy:
         content: |
@@ -82,11 +96,12 @@
           }
         dest: /etc/docker/daemon.json
 
-    - name: Create Docker directory
+    - name: Create Docker service directory
       file:
         path: /etc/systemd/system/docker.service.d
         state: directory
 
+    # Disable swap
     - name: Disable swap
       command: swapoff -a
 
@@ -98,7 +113,6 @@
       with_items:
         - br_netfilter
         - overlay
-      ignore_errors: yes
 
     - name: Set system configurations for Kubernetes networking
       sysctl:
@@ -110,9 +124,8 @@
         - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
         - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
         - { name: 'net.ipv4.ip_forward', value: '1' }
-      ignore_errors: yes
 
-    # Configuration Firewall
+    # Configure firewall
     - name: Configure firewall rules
       ufw:
         rule: allow
@@ -121,235 +134,49 @@
       loop:
         - 22    # SSH
         - 6443  # Kubernetes API
-        - 8080  # WebGoat
-        - 9090  # Prometheus
-        - 3000  # Grafana
-        - 30000
-        - 30080
-        - 32767  # NodePort range
+        - 30000-32767  # NodePort range
 
-    # Reset and cleanup existing Kubernetes installation
-    - name: Reset Kubernetes cluster
-      command: kubeadm reset --force
-      ignore_errors: yes
+    # Initialize Kubernetes cluster
+    - name: Create kubeadm configuration
+      copy:
+        dest: /etc/kubernetes/kubeadm-config.yaml
+        content: |
+          apiVersion: kubeadm.k8s.io/v1beta3
+          kind: ClusterConfiguration
+          networking:
+            podSubnet: "192.168.0.0/16"
+          criSocket: "unix:///run/containerd/containerd.sock"
 
-    - name: Remove Kubernetes directories
-      file:
-        path: "{{ item }}"
-        state: absent
-      with_items:
-        - /etc/kubernetes/manifests
-        - /etc/kubernetes/pki
-        - /var/lib/kubelet
-        - /var/lib/etcd
-      ignore_errors: yes
-
-    - name: Kill processes using port 6443
-      shell: |
-        lsof -ti:6443 | xargs kill -9 || true
-      ignore_errors: yes
-
-    # Complete cleanup of Kubernetes
-    - name: Complete cleanup of Kubernetes
-      shell: |
-        systemctl stop kubelet
-        systemctl stop docker || true
-        systemctl stop containerd
-        rm -rf /etc/kubernetes/*
-        rm -rf /var/lib/kubelet/*
-        rm -rf /var/lib/etcd
-        rm -rf /var/run/kubernetes
-        rm -rf /var/lib/cni/
-        rm -rf /etc/cni/
-        ip link delete cni0 || true
-        ip link delete flannel.1 || true
-        systemctl start containerd
-        systemctl start docker || true
-      ignore_errors: yes
-
-    - name: Reset crictl
-      shell: |
-        crictl rm -f $(crictl ps -aq) || true
-        crictl rmi -f $(crictl images -q) || true
-      ignore_errors: yes
-
-    # Configure networking prerequisites
-    - name: Configure networking prerequisites
-      shell: |
-        # Load required modules
-        modprobe overlay
-        modprobe br_netfilter
-        
-        # Set up required sysctl params
-        cat > /etc/sysctl.d/99-kubernetes-cri.conf << EOF
-        net.bridge.bridge-nf-call-iptables  = 1
-        net.ipv4.ip_forward                 = 1
-        net.bridge.bridge-nf-call-ip6tables = 1
-        EOF
-        
-        # Apply sysctl params without reboot
-        sysctl --system
-      ignore_errors: yes
-
-    - name: Ensure directories
-      file:
-        path: "{{ item }}"
-        state: directory
-        mode: '0755'
-      with_items:
-        - /etc/kubernetes
-        - /etc/kubernetes/manifests
-        - /var/lib/kubelet
-        - /var/lib/etcd
-
-    - name: Clean iptables
-      shell: |
-        iptables -F
-        iptables -X
-        iptables -t nat -F
-        iptables -t nat -X
-        iptables -t mangle -F
-        iptables -t mangle -X
-        iptables -P INPUT ACCEPT
-        iptables -P FORWARD ACCEPT
-        iptables -P OUTPUT ACCEPT
-      ignore_errors: yes
-
-    # Configure crictl
-    - name: Configure crictl
-      shell: |
-        cat > /etc/crictl.yaml << EOF
-        runtime-endpoint: unix:///run/containerd/containerd.sock
-        image-endpoint: unix:///run/containerd/containerd.sock
-        timeout: 10
-        debug: true
-        EOF
-      ignore_errors: yes
-
-    # Verify kubelet configuration
-    - name: Verify kubelet configuration
-      shell: |
-        mkdir -p /etc/kubernetes/manifests
-        echo "=== Kubelet Configuration ==="
-        cat > /var/lib/kubelet/config.yaml << EOF
-        apiVersion: kubelet.config.k8s.io/v1beta1
-        kind: KubeletConfiguration
-        cgroupDriver: systemd
-        EOF
-        
-        systemctl restart kubelet
-        systemctl status kubelet
-      register: kubelet_config
-      ignore_errors: yes
-
-    - name: Initialize Kubernetes with explicit paths
-      shell: |
-        kubeadm init \
-          --pod-network-cidr=192.168.0.0/16 \
-          --upload-certs \
-          --ignore-preflight-errors=all \
-          --v=5 \
-          --cri-socket=unix:///run/containerd/containerd.sock \
-          --config=/var/lib/kubelet/config.yaml \
-          --skip-phases=addon/kube-proxy \
-          2>&1 | tee /var/log/kubeadm-init.log
+    - name: Initialize Kubernetes
+      shell: kubeadm init --config=/etc/kubernetes/kubeadm-config.yaml --upload-certs --v=5
       register: kubeadm_init
-      ignore_errors: yes
 
-    - name: Check kubelet logs
-      shell: |
-        echo "=== Kubelet Status ==="
-        systemctl status kubelet
-        echo "=== Kubelet Logs ==="
-        journalctl -u kubelet --no-pager | tail -n 50
-        echo "=== Manifest Directory ==="
-        ls -l /etc/kubernetes/manifests/
-      register: kubelet_status
-      ignore_errors: yes
-
-    - name: Display kubelet status
+    - name: Display kubeadm init output
       debug:
-        var: kubelet_status.stdout_lines
+        var: kubeadm_init.stdout_lines
 
-    - name: Wait for API server pod
+    # Configure kubectl for the user
+    - name: Set up kubectl for user
       shell: |
-        for i in $(seq 1 30); do
-          if crictl ps | grep kube-apiserver; then
-            echo "API server pod is running"
-            crictl logs $(crictl ps | grep kube-apiserver | awk '{print $1}')
-            exit 0
-          fi
-          echo "Waiting for API server pod... attempt $i"
-          sleep 10
-        done
-        exit 1
-      register: api_wait
-      ignore_errors: yes
+        mkdir -p $HOME/.kube
+        cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+        chown $(id -u):$(id -g) $HOME/.kube/config
 
-    - name: Show API server wait results
-      debug:
-        var: api_wait.stdout_lines
-
-    # Pre-pull required images
-    - name: Pre-pull required images
+    # Deploy network plugin
+    - name: Deploy Calico CNI
       shell: |
-        kubeadm config images pull --v=5
-      register: image_pull
-      ignore_errors: yes
+        kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+      register: calico_apply
 
-    - name: Display image pull results
+    - name: Display Calico deployment output
       debug:
-        var: image_pull.stdout_lines
+        var: calico_apply.stdout_lines
 
-    # Verify control plane components
+    # Verify Kubernetes setup
     - name: Verify control plane components
-      shell: |
-        mkdir -p /tmp/k8s-debug
-        echo "=== Static Pod Manifests ==="
-        ls -l /etc/kubernetes/manifests/
-        echo "=== Certificates ==="
-        ls -l /etc/kubernetes/pki/
-        echo "=== Container Status ==="
-        crictl ps -a
-        echo "=== Container Logs ==="
-        for pod in $(crictl ps -a -q); do
-          echo "=== Logs for $pod ==="
-          crictl logs $pod || true
-        done
-      register: verification
-      ignore_errors: yes
+      shell: kubectl get pods -n kube-system
+      register: control_plane_status
 
-    - name: Display verification
+    - name: Display control plane status
       debug:
-        var: verification.stdout_lines
-
-    - name: Wait for API server socket
-      wait_for:
-        path: /var/run/kubernetes/apiserver.sock
-        timeout: 300
-      ignore_errors: yes
-
-    # Get etcd and apiserver logs
-    - name: Get detailed container logs
-      shell: |
-        echo "=== etcd container logs ==="
-        for container in $(crictl ps -a | grep etcd | awk '{print $1}'); do
-          echo "Container ID: $container"
-          crictl inspect $container
-          crictl logs $container
-        done
-
-        echo "=== API server container logs ==="
-        for container in $(crictl ps -a | grep kube-apiserver | awk '{print $1}'); do
-          echo "Container ID: $container"
-          crictl inspect $container
-
-          crictl logs $container
-        done
-      register: detailed_logs
-      ignore_errors: yes
-
-    - name: Display detailed logs
-      debug:
-        var: detailed_logs.stdout_lines
-
+        var: control_plane_status.stdout_lines
