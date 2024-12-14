@@ -11,17 +11,20 @@
         path: /etc/apt/sources.list.d/kubernetes.list
         state: absent
 
+    - name: Stop kubelet service
+      service:
+        name: kubelet
+        state: stopped
+
     - name: Remove Kubernetes directories
-      file:
-        path: "{{ item }}"
-        state: absent
-      with_items:
-        - /etc/kubernetes/manifests
-        - /etc/kubernetes/pki
-        - /var/lib/kubelet
-        - /var/lib/etcd
-        - /etc/cni
-        - /var/lib/cni
+      shell: |
+        umount -lf /var/lib/kubelet || true
+        rm -rf /etc/kubernetes/manifests
+        rm -rf /etc/kubernetes/pki
+        rm -rf /var/lib/kubelet
+        rm -rf /var/lib/etcd
+        rm -rf /etc/cni
+        rm -rf /var/lib/cni
       ignore_errors: yes
 
     - name: Clean iptables rules
@@ -126,7 +129,13 @@
         - { name: 'net.ipv4.ip_forward', value: '1' }
 
     # Configure firewall
-    - name: Configure firewall rules
+    - name: Configure NodePort range using iptables
+      shell: |
+        iptables -A INPUT -p tcp --dport 30000:32767 -j ACCEPT
+        iptables -A OUTPUT -p tcp --sport 30000:32767 -j ACCEPT
+      ignore_errors: no
+
+    - name: Allow required ports with UFW
       ufw:
         rule: allow
         port: "{{ item }}"
@@ -134,7 +143,6 @@
       loop:
         - 22    # SSH
         - 6443  # Kubernetes API
-        - 30000-32767  # NodePort range
 
     # Initialize Kubernetes cluster
     - name: Create kubeadm configuration
