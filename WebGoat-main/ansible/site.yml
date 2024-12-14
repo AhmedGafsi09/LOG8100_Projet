@@ -253,47 +253,69 @@
         chown -R azureuser:azureuser /home/azureuser/.kube
       when: kubeadm_init.rc == 0
 
-    # Wait for API server with additional debugging
-    - name: Wait for nodes to be ready
+    # Check etcd and API server pods
+    - name: Check etcd and API server pods
       shell: |
-        for i in $(seq 1 60); do
-          echo "Attempt $i: Checking node status..."
-          kubectl get nodes && break
-          sleep 5
+        mkdir -p /etc/kubernetes/manifests/backup
+        mv /etc/kubernetes/manifests/* /etc/kubernetes/manifests/backup/
+        systemctl restart kubelet
+        sleep 10
+        mv /etc/kubernetes/manifests/backup/* /etc/kubernetes/manifests/
+        rm -rf /etc/kubernetes/manifests/backup
+        systemctl restart kubelet
+      ignore_errors: yes
+
+    - name: Wait for control plane pods
+      shell: |
+        for i in $(seq 1 30); do
+          echo "Attempt $i: Checking control plane pods..."
+          if crictl ps | grep -q "kube-apiserver"; then
+            echo "API server is running"
+            if crictl ps | grep -q "etcd"; then
+              echo "etcd is running"
+              exit 0
+            fi
+          fi
+          sleep 10
         done
-      become_user: azureuser
-      register: node_check
+        exit 1
+      register: control_plane_check
       ignore_errors: yes
 
-    - name: Debug node status
+    - name: Get pod logs
       shell: |
-        echo "=== Kubernetes Service Status ==="
-        systemctl status kubelet
-        echo "=== API Server Pod Status ==="
-        crictl ps | grep kube-apiserver
         echo "=== API Server Logs ==="
-        journalctl -u kubelet -n 50
-      register: debug_output
+        crictl logs $(crictl ps -q --name kube-apiserver) || true
+        echo "=== etcd Logs ==="
+        crictl logs $(crictl ps -q --name etcd) || true
+      register: pod_logs
       ignore_errors: yes
 
-    - name: Display debug output
+    - name: Display pod logs
       debug:
-        var: debug_output.stdout_lines
+        var: pod_logs.stdout_lines
 
-    - name: Verify API server accessibility
+    - name: Fix etcd permissions
       shell: |
-        kubectl cluster-info
-        kubectl get --raw /healthz
-      become_user: azureuser
-      register: api_status
-      retries: 12
-      delay: 10
-      until: api_status.rc == 0
+        chmod 600 /etc/kubernetes/pki/etcd/peer.*
+        chmod 600 /etc/kubernetes/pki/etcd/server.*
+        chmod 600 /etc/kubernetes/pki/etcd/ca.*
+        chown -R root:root /etc/kubernetes/pki/etcd/
+        systemctl restart kubelet
       ignore_errors: yes
 
-    - name: Display API status
-      debug:
-        var: api_status.stdout_lines
+    - name: Final wait for API server
+      shell: |
+        for i in $(seq 1 20); do
+          if kubectl get nodes; then
+            exit 0
+          fi
+          sleep 10
+        done
+        exit 1
+      become_user: azureuser
+      register: final_check
+      ignore_errors: yes
 
     - name: Remove master node taint
       command: kubectl taint nodes --all node-role.kubernetes.io/control-plane-
