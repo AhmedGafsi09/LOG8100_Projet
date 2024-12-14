@@ -19,6 +19,7 @@
           - ca-certificates
           - curl
           - gnupg
+          - lsof
         update_cache: yes
         state: present
 
@@ -95,6 +96,28 @@
     - name: Disable swap
       command: swapoff -a
 
+    # Configure kernel modules
+    - name: Configure kernel modules
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - br_netfilter
+        - overlay
+      ignore_errors: yes
+
+    - name: Set system configurations for Kubernetes networking
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+      with_items:
+        - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+        - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+        - { name: 'net.ipv4.ip_forward', value: '1' }
+      ignore_errors: yes
+
     # Configuration Firewall
     - name: Configure firewall rules
       ufw:
@@ -110,9 +133,34 @@
         - 30000
         - 32767  # NodePort range
 
+    # Reset and cleanup existing Kubernetes installation
+    - name: Reset Kubernetes cluster
+      command: kubeadm reset --force
+      ignore_errors: yes
+
+    - name: Remove Kubernetes directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /etc/kubernetes/manifests
+        - /etc/kubernetes/pki
+        - /var/lib/kubelet
+        - /var/lib/etcd
+      ignore_errors: yes
+
+    - name: Kill processes using port 6443
+      shell: |
+        lsof -ti:6443 | xargs kill -9 || true
+      ignore_errors: yes
+
     # Initialisation Kubernetes
     - name: Initialize Kubernetes cluster
-      command: kubeadm init --pod-network-cidr=192.168.0.0/16
+      command: >
+        kubeadm init 
+        --pod-network-cidr=192.168.0.0/16 
+        --ignore-preflight-errors=all
+        --apiserver-bind-port=6443
       register: kubeadm_init
       ignore_errors: yes
 
