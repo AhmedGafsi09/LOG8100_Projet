@@ -127,7 +127,7 @@
         - 30000
         - 32767  # NodePort range
 
-# Reset and cleanup existing Kubernetes installation
+    # Reset and cleanup existing Kubernetes installation
     - name: Reset Kubernetes cluster
       command: kubeadm reset --force
       ignore_errors: yes
@@ -253,18 +253,47 @@
         chown -R azureuser:azureuser /home/azureuser/.kube
       when: kubeadm_init.rc == 0
 
-    # Wait for API server
-    - name: Wait for Kubernetes API server
+    # Wait for API server with additional debugging
+    - name: Wait for nodes to be ready
       shell: |
-        until kubectl get nodes; do
+        for i in $(seq 1 60); do
+          echo "Attempt $i: Checking node status..."
+          kubectl get nodes && break
           sleep 5
-          echo "Waiting for Kubernetes API server..."
         done
       become_user: azureuser
-      register: api_check
-      retries: 30
+      register: node_check
+      ignore_errors: yes
+
+    - name: Debug node status
+      shell: |
+        echo "=== Kubernetes Service Status ==="
+        systemctl status kubelet
+        echo "=== API Server Pod Status ==="
+        crictl ps | grep kube-apiserver
+        echo "=== API Server Logs ==="
+        journalctl -u kubelet -n 50
+      register: debug_output
+      ignore_errors: yes
+
+    - name: Display debug output
+      debug:
+        var: debug_output.stdout_lines
+
+    - name: Verify API server accessibility
+      shell: |
+        kubectl cluster-info
+        kubectl get --raw /healthz
+      become_user: azureuser
+      register: api_status
+      retries: 12
       delay: 10
-      until: api_check.rc == 0
+      until: api_status.rc == 0
+      ignore_errors: yes
+
+    - name: Display API status
+      debug:
+        var: api_status.stdout_lines
 
     - name: Remove master node taint
       command: kubectl taint nodes --all node-role.kubernetes.io/control-plane-
