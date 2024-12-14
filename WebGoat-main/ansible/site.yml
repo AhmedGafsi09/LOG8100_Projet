@@ -1,336 +1,352 @@
 ---
 - name: Install and Configure Kubernetes Infrastructure
- hosts: azure-vm
- become: yes
- vars:
-   ansible_python_interpreter: /usr/bin/python3
- tasks:
-   # Nettoyage des anciens fichiers
-   - name: Remove old Kubernetes sources
-     file:
-       path: /etc/apt/sources.list.d/kubernetes.list
-       state: absent
+  hosts: azure-vm
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  tasks:
+    # Nettoyage des anciens fichiers
+    - name: Remove old Kubernetes sources
+      file:
+        path: /etc/apt/sources.list.d/kubernetes.list
+        state: absent
 
-   # Installation des prérequis
-   - name: Install dependencies
-     apt:
-       name:
-         - apt-transport-https
-         - ca-certificates
-         - curl
-         - gnupg
-         - lsof
-       update_cache: yes
-       state: present
+    # Installation des prérequis
+    - name: Install dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsof
+        update_cache: yes
+        state: present
 
-   # Configuration Docker
-   - name: Ensure /usr/share/keyrings exists
-     file:
-       path: /usr/share/keyrings
-       state: directory
-       mode: '0755'
+    # Configuration Docker
+    - name: Ensure /usr/share/keyrings exists
+      file:
+        path: /usr/share/keyrings
+        state: directory
+        mode: '0755'
 
-   - name: Add Docker GPG key
-     get_url:
-       url: https://download.docker.com/linux/ubuntu/gpg
-       dest: /usr/share/keyrings/docker-archive-keyring.gpg
-       mode: '0644'
+    - name: Add Docker GPG key
+      get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /usr/share/keyrings/docker-archive-keyring.gpg
+        mode: '0644'
 
-   - name: Add Docker repository
-     shell: |
-       echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+    - name: Add Docker repository
+      shell: |
+        echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-   # Configuration Kubernetes
-   - name: Ensure /etc/apt/keyrings exists
-     file:
-       path: /etc/apt/keyrings
-       state: directory
-       mode: '0755'
+    # Configuration Kubernetes
+    - name: Ensure /etc/apt/keyrings exists
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
 
-   - name: Add Kubernetes GPG key
-     get_url:
-       url: https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key
-       dest: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-       mode: '0644'
+    - name: Add Kubernetes GPG key
+      get_url:
+        url: https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key
+        dest: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        mode: '0644'
 
-   - name: Add Kubernetes repository
-     shell: |
-       echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list > /dev/null
+    - name: Add Kubernetes repository
+      shell: |
+        echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list > /dev/null
 
-   - name: Update apt and install packages
-     apt:
-       name:
-         - docker-ce
-         - kubelet
-         - kubeadm
-         - kubectl
-         - containerd.io
-       update_cache: yes
-       state: present
+    - name: Update apt and install packages
+      apt:
+        name:
+          - docker-ce
+          - kubelet
+          - kubeadm
+          - kubectl
+          - containerd.io
+        update_cache: yes
+        state: present
 
-   # Configuration système
-   - name: Configure Docker daemon
-     copy:
-       content: |
-         {
-           "exec-opts": ["native.cgroupdriver=systemd"],
-           "log-driver": "json-file",
-           "log-opts": {
-             "max-size": "100m"
-           },
-           "storage-driver": "overlay2"
-         }
-       dest: /etc/docker/daemon.json
+    # Configuration système
+    - name: Configure Docker daemon
+      copy:
+        content: |
+          {
+            "exec-opts": ["native.cgroupdriver=systemd"],
+            "log-driver": "json-file",
+            "log-opts": {
+              "max-size": "100m"
+            },
+            "storage-driver": "overlay2"
+          }
+        dest: /etc/docker/daemon.json
 
-   - name: Create Docker directory
-     file:
-       path: /etc/systemd/system/docker.service.d
-       state: directory
+    - name: Create Docker directory
+      file:
+        path: /etc/systemd/system/docker.service.d
+        state: directory
 
-   - name: Disable swap
-     command: swapoff -a
+    - name: Disable swap
+      command: swapoff -a
 
-   # Configure kernel modules
-   - name: Configure kernel modules
-     modprobe:
-       name: "{{ item }}"
-       state: present
-     with_items:
-       - br_netfilter
-       - overlay
-     ignore_errors: yes
+    # Configure kernel modules
+    - name: Configure kernel modules
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - br_netfilter
+        - overlay
+      ignore_errors: yes
 
-   - name: Set system configurations for Kubernetes networking
-     sysctl:
-       name: "{{ item.name }}"
-       value: "{{ item.value }}"
-       state: present
-       reload: yes
-     with_items:
-       - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
-       - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
-       - { name: 'net.ipv4.ip_forward', value: '1' }
-     ignore_errors: yes
+    - name: Set system configurations for Kubernetes networking
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+      with_items:
+        - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+        - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+        - { name: 'net.ipv4.ip_forward', value: '1' }
+      ignore_errors: yes
 
-   # Configuration Firewall
-   - name: Configure firewall rules
-     ufw:
-       rule: allow
-       port: "{{ item }}"
-       proto: tcp
-     loop:
-       - 22    # SSH
-       - 6443  # Kubernetes API
-       - 8080  # WebGoat
-       - 9090  # Prometheus
-       - 3000  # Grafana
-       - 30080 # WebGoat NodePort
-       - 30000:32767  # NodePort range
+    # Configuration Firewall
+    - name: Configure firewall rules
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - 22    # SSH
+        - 6443  # Kubernetes API
+        - 8080  # WebGoat
+        - 9090  # Prometheus
+        - 3000  # Grafana
+        - 30000
+        - 32767  # NodePort range
 
-   # Nettoyage et réinitialisation
-   - name: Reset Kubernetes cluster
-     command: kubeadm reset --force
-     ignore_errors: yes
+    # Reset and cleanup existing Kubernetes installation
+    - name: Reset Kubernetes cluster
+      command: kubeadm reset --force
+      ignore_errors: yes
 
-   - name: Complete cleanup of Kubernetes
-     shell: |
-       systemctl stop kubelet
-       systemctl stop docker || true
-       systemctl stop containerd
-       rm -rf /etc/kubernetes/*
-       rm -rf /var/lib/kubelet/*
-       rm -rf /var/lib/etcd
-       rm -rf /var/run/kubernetes
-       rm -rf /var/lib/cni/
-       rm -rf /etc/cni/
-       ip link delete cni0 || true
-       ip link delete flannel.1 || true
-       systemctl start containerd
-       systemctl start docker || true
-     ignore_errors: yes
+    - name: Remove Kubernetes directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /etc/kubernetes/manifests
+        - /etc/kubernetes/pki
+        - /var/lib/kubelet
+        - /var/lib/etcd
+      ignore_errors: yes
 
-   - name: Configure containerd
-     shell: |
-       mkdir -p /etc/containerd
-       containerd config default | tee /etc/containerd/config.toml
-       sed -i 's/SystemdCgroup \= false/SystemdCgroup \= true/g' /etc/containerd/config.toml
-       systemctl restart containerd
-       systemctl restart kubelet
-     ignore_errors: yes
+    - name: Kill processes using port 6443
+      shell: |
+        lsof -ti:6443 | xargs kill -9 || true
+      ignore_errors: yes
 
-   # Initialize Kubernetes
-   - name: Initialize Kubernetes cluster
-     shell: |
-       kubeadm init \
-       --pod-network-cidr=192.168.0.0/16 \
-       --apiserver-advertise-address=10.0.0.4 \
-       --control-plane-endpoint=10.0.0.4 \
-       --ignore-preflight-errors=all \
-       --v=5 
-     register: kubeadm_init
-     ignore_errors: yes
+    # Complete cleanup of Kubernetes
+    - name: Complete cleanup of Kubernetes
+      shell: |
+        systemctl stop kubelet
+        systemctl stop docker || true
+        systemctl stop containerd
+        rm -rf /etc/kubernetes/*
+        rm -rf /var/lib/kubelet/*
+        rm -rf /var/lib/etcd
+        rm -rf /var/run/kubernetes
+        rm -rf /var/lib/cni/
+        rm -rf /etc/cni/
+        ip link delete cni0 || true
+        ip link delete flannel.1 || true
+        systemctl start containerd
+        systemctl start docker || true
+      ignore_errors: yes
 
-   - name: Create .kube directory
-     file:
-       path: /home/azureuser/.kube
-       state: directory
-       owner: azureuser
-       group: azureuser
-       mode: '0755'
+    - name: Reset crictl
+      shell: |
+        crictl rm -f $(crictl ps -aq) || true
+        crictl rmi -f $(crictl images -q) || true
+      ignore_errors: yes
 
-   - name: Copy kube config
-     copy:
-       src: /etc/kubernetes/admin.conf
-       dest: /home/azureuser/.kube/config
-       remote_src: yes
-       owner: azureuser
-       group: azureuser
-       mode: '0600'
-     when: kubeadm_init.rc == 0
+    # Configure networking prerequisites
+    - name: Configure networking prerequisites
+      shell: |
+        # Load required modules
+        modprobe overlay
+        modprobe br_netfilter
+        
+        # Set up required sysctl params
+        cat > /etc/sysctl.d/99-kubernetes-cri.conf << EOF
+        net.bridge.bridge-nf-call-iptables  = 1
+        net.ipv4.ip_forward                 = 1
+        net.bridge.bridge-nf-call-ip6tables = 1
+        EOF
+        
+        # Apply sysctl params without reboot
+        sysctl --system
+      ignore_errors: yes
 
-   # Install Calico
-   - name: Install Calico networking
-     command: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/calico.yaml
-     become_user: azureuser
-     ignore_errors: yes
+    - name: Ensure directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      with_items:
+        - /etc/kubernetes
+        - /etc/kubernetes/manifests
+        - /var/lib/kubelet
+        - /var/lib/etcd
 
-   # Create and apply WebGoat manifests
-   - name: Create manifests directory
-     file:
-       path: /home/azureuser/manifests
-       state: directory
-       owner: azureuser
-       group: azureuser
-       mode: '0755'
+    - name: Clean iptables
+      shell: |
+        iptables -F
+        iptables -X
+        iptables -t nat -F
+        iptables -t nat -X
+        iptables -t mangle -F
+        iptables -t mangle -X
+        iptables -P INPUT ACCEPT
+        iptables -P FORWARD ACCEPT
+        iptables -P OUTPUT ACCEPT
+      ignore_errors: yes
 
-   - name: Create WebGoat manifests
-     copy:
-       content: |
-         apiVersion: v1
-         kind: Namespace
-         metadata:
-           name: webgoat
-         ---
-         apiVersion: v1
-         kind: ResourceQuota
-         metadata:
-           name: webgoat-quota
-           namespace: webgoat
-         spec:
-           hard:
-             requests.cpu: "2"
-             requests.memory: 2Gi
-             limits.cpu: "4"
-             limits.memory: 4Gi
-         ---
-         apiVersion: v1
-         kind: ServiceAccount
-         metadata:
-           name: webgoat-serviceaccount
-           namespace: webgoat
-         ---
-         apiVersion: networking.k8s.io/v1
-         kind: NetworkPolicy
-         metadata:
-           name: webgoat-network-policy
-           namespace: webgoat
-         spec:
-           podSelector: {}
-           policyTypes:
-           - Ingress
-           ingress:
-           - {}
-         ---
-         apiVersion: apps/v1
-         kind: Deployment
-         metadata:
-           name: webgoat
-           namespace: webgoat
-         spec:
-           replicas: 1
-           selector:
-             matchLabels:
-               app: webgoat
-           template:
-             metadata:
-               labels:
-                 app: webgoat
-             spec:
-               serviceAccountName: webgoat-serviceaccount
-               containers:
-               - name: webgoat
-                 image: webgoat/webgoat:v8.2.2
-                 ports:
-                 - containerPort: 8080
-                   name: http
-                 resources:
-                   requests:
-                     memory: "512Mi"
-                     cpu: "200m"
-                   limits:
-                     memory: "1Gi"
-                     cpu: "500m"
-                 env:
-                 - name: WEBGOAT_PORT
-                   value: "8080"
-                 - name: WEBGOAT_SSLENABLED
-                   value: "false"
-                 livenessProbe:
-                   httpGet:
-                     path: /WebGoat
-                     port: http
-                   initialDelaySeconds: 60
-                   periodSeconds: 10
-                   timeoutSeconds: 5
-                 readinessProbe:
-                   httpGet:
-                     path: /WebGoat
-                     port: http
-                   initialDelaySeconds: 30
-                   periodSeconds: 10
-                   timeoutSeconds: 5
-         ---
-         apiVersion: v1
-         kind: Service
-         metadata:
-           name: webgoat
-           namespace: webgoat
-           labels:
-             app: webgoat
-         spec:
-           type: NodePort
-           ports:
-             - port: 8080
-               targetPort: 8080
-               nodePort: 30080
-               protocol: TCP
-               name: http
-           selector:
-             app: webgoat
-       dest: /home/azureuser/manifests/webgoat.yml
-       owner: azureuser
-       group: azureuser
-       mode: '0644'
+    # Configure crictl
+    - name: Configure crictl
+      shell: |
+        cat > /etc/crictl.yaml << EOF
+        runtime-endpoint: unix:///run/containerd/containerd.sock
+        image-endpoint: unix:///run/containerd/containerd.sock
+        timeout: 10
+        debug: true
+        EOF
+      ignore_errors: yes
 
-   - name: Apply WebGoat manifests
-     command: kubectl apply -f /home/azureuser/manifests/webgoat.yml
-     become_user: azureuser
-     ignore_errors: yes
+    # Verify kubelet configuration
+    - name: Verify kubelet configuration
+      shell: |
+        mkdir -p /etc/kubernetes/manifests
+        echo "=== Kubelet Configuration ==="
+        cat > /var/lib/kubelet/config.yaml << EOF
+        apiVersion: kubelet.config.k8s.io/v1beta1
+        kind: KubeletConfiguration
+        cgroupDriver: systemd
+        EOF
+        
+        systemctl restart kubelet
+        systemctl status kubelet
+      register: kubelet_config
+      ignore_errors: yes
 
-   # Wait for pods to be ready
-   - name: Wait for WebGoat pod to be ready
-     shell: |
-       kubectl wait --for=condition=ready pods -l app=webgoat -n webgoat --timeout=300s
-     become_user: azureuser
-     ignore_errors: yes
+    - name: Initialize Kubernetes with explicit paths
+      shell: |
+        kubeadm init \
+          --pod-network-cidr=192.168.0.0/16 \
+          --upload-certs \
+          --ignore-preflight-errors=all \
+          --v=5 \
+          --cri-socket=unix:///run/containerd/containerd.sock \
+          --config=/var/lib/kubelet/config.yaml \
+          --skip-phases=addon/kube-proxy \
+          2>&1 | tee /var/log/kubeadm-init.log
+      register: kubeadm_init
+      ignore_errors: yes
 
-   # Display service URL
-   - name: Get WebGoat URL
-     shell: |
-       echo "WebGoat URL: http://$(curl -s ifconfig.me):30080/WebGoat"
-     become_user: azureuser
-     register: webgoat_url
+    - name: Check kubelet logs
+      shell: |
+        echo "=== Kubelet Status ==="
+        systemctl status kubelet
+        echo "=== Kubelet Logs ==="
+        journalctl -u kubelet --no-pager | tail -n 50
+        echo "=== Manifest Directory ==="
+        ls -l /etc/kubernetes/manifests/
+      register: kubelet_status
+      ignore_errors: yes
 
-   - name: Show WebGoat URL
-     debug:
-       var: webgoat_url.stdout_lines
+    - name: Display kubelet status
+      debug:
+        var: kubelet_status.stdout_lines
+
+    - name: Wait for API server pod
+      shell: |
+        for i in $(seq 1 30); do
+          if crictl ps | grep kube-apiserver; then
+            echo "API server pod is running"
+            crictl logs $(crictl ps | grep kube-apiserver | awk '{print $1}')
+            exit 0
+          fi
+          echo "Waiting for API server pod... attempt $i"
+          sleep 10
+        done
+        exit 1
+      register: api_wait
+      ignore_errors: yes
+
+    - name: Show API server wait results
+      debug:
+        var: api_wait.stdout_lines
+
+    # Pre-pull required images
+    - name: Pre-pull required images
+      shell: |
+        kubeadm config images pull --v=5
+      register: image_pull
+      ignore_errors: yes
+
+    - name: Display image pull results
+      debug:
+        var: image_pull.stdout_lines
+
+    # Verify control plane components
+    - name: Verify control plane components
+      shell: |
+        mkdir -p /tmp/k8s-debug
+        echo "=== Static Pod Manifests ==="
+        ls -l /etc/kubernetes/manifests/
+        echo "=== Certificates ==="
+        ls -l /etc/kubernetes/pki/
+        echo "=== Container Status ==="
+        crictl ps -a
+        echo "=== Container Logs ==="
+        for pod in $(crictl ps -a -q); do
+          echo "=== Logs for $pod ==="
+          crictl logs $pod || true
+        done
+      register: verification
+      ignore_errors: yes
+
+    - name: Display verification
+      debug:
+        var: verification.stdout_lines
+
+    - name: Wait for API server socket
+      wait_for:
+        path: /var/run/kubernetes/apiserver.sock
+        timeout: 300
+      ignore_errors: yes
+
+    # Get etcd and apiserver logs
+    - name: Get detailed container logs
+      shell: |
+        echo "=== etcd container logs ==="
+        for container in $(crictl ps -a | grep etcd | awk '{print $1}'); do
+          echo "Container ID: $container"
+          crictl inspect $container
+          crictl logs $container
+        done
+
+        echo "=== API server container logs ==="
+        for container in $(crictl ps -a | grep kube-apiserver | awk '{print $1}'); do
+          echo "Container ID: $container"
+          crictl inspect $container
+          crictl logs $container
+        done
+      register: detailed_logs
+      ignore_errors: yes
+
+    - name: Display detailed logs
+      debug:
+        var: detailed_logs.stdout_lines
