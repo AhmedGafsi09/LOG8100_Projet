@@ -16,9 +16,13 @@
         name: kubelet
         state: stopped
 
+    - name: Unmount stale kubelet directories
+      shell: |
+        mount | grep /var/lib/kubelet | awk '{print $3}' | xargs -r umount -lf
+      ignore_errors: yes
+
     - name: Remove Kubernetes directories
       shell: |
-        umount -lf /var/lib/kubelet || true
         rm -rf /etc/kubernetes/manifests
         rm -rf /etc/kubernetes/pki
         rm -rf /var/lib/kubelet
@@ -144,7 +148,7 @@
         - 22    # SSH
         - 6443  # Kubernetes API
 
-    # Initialize Kubernetes cluster
+    # Create kubeadm configuration
     - name: Create kubeadm configuration
       copy:
         dest: /etc/kubernetes/kubeadm-config.yaml
@@ -153,7 +157,6 @@
           kind: ClusterConfiguration
           networking:
             podSubnet: "192.168.0.0/16"
-          criSocket: "unix:///run/containerd/containerd.sock"
 
     - name: Initialize Kubernetes
       shell: kubeadm init --config=/etc/kubernetes/kubeadm-config.yaml --upload-certs --v=5
@@ -169,22 +172,3 @@
         mkdir -p $HOME/.kube
         cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
         chown $(id -u):$(id -g) $HOME/.kube/config
-
-    # Deploy network plugin
-    - name: Deploy Calico CNI
-      shell: |
-        kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
-      register: calico_apply
-
-    - name: Display Calico deployment output
-      debug:
-        var: calico_apply.stdout_lines
-
-    # Verify Kubernetes setup
-    - name: Verify control plane components
-      shell: kubectl get pods -n kube-system
-      register: control_plane_status
-
-    - name: Display control plane status
-      debug:
-        var: control_plane_status.stdout_lines
