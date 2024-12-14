@@ -343,6 +343,7 @@
         for container in $(crictl ps -a | grep kube-apiserver | awk '{print $1}'); do
           echo "Container ID: $container"
           crictl inspect $container
+
           crictl logs $container
         done
       register: detailed_logs
@@ -351,3 +352,4 @@
     - name: Display detailed logs
       debug:
         var: detailed_logs.stdout_lines
+
