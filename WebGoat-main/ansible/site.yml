@@ -107,7 +107,8 @@
         - 8080  # WebGoat
         - 9090  # Prometheus
         - 3000  # Grafana
-        - 30000-32767  # NodePort range
+        - 30000
+        - 32767  # NodePort range
 
     # Initialisation Kubernetes
     - name: Initialize Kubernetes cluster
