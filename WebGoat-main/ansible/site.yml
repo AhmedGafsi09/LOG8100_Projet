@@ -156,7 +156,7 @@
 
     # Déploiement des manifests WebGoat
     - name: Deploy WebGoat resources
-      command: kubectl apply -f {{ item }}
+      command: kubectl apply -f manifests/ {{ item }}
       with_items:
         - manifests/resource-quota.yml
         - manifests/service-account.yml
