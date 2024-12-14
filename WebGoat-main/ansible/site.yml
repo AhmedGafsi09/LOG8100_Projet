@@ -153,9 +153,10 @@
           kind: ClusterConfiguration
           networking:
             podSubnet: "192.168.0.0/16"
+          criSocket: "unix:///run/containerd/containerd.sock"
 
     - name: Initialize Kubernetes
-      shell: kubeadm init --config=/etc/kubernetes/kubeadm-config.yaml --upload-certs --cri-socket=unix:///run/containerd/containerd.sock --v=5
+      shell: kubeadm init --config=/etc/kubernetes/kubeadm-config.yaml --upload-certs --v=5
       register: kubeadm_init
 
     - name: Display kubeadm init output
