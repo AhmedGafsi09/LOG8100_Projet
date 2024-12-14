@@ -125,6 +125,7 @@
         - 9090  # Prometheus
         - 3000  # Grafana
         - 30000
+        - 30080
         - 32767  # NodePort range
 
     # Reset and cleanup existing Kubernetes installation
