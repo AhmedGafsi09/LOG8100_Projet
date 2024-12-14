@@ -302,20 +302,51 @@
         timeout: 300
       ignore_errors: yes
 
-    # Check API server status
-    - name: Check API server status
+    # Get etcd and apiserver logs
+    - name: Get etcd and apiserver logs
       shell: |
-        for i in {1..30}; do
-          if nc -z localhost 6443; then
-            echo "API server is listening on port 6443"
-            exit 0
-          fi
-          echo "Waiting for API server... attempt $i"
-          sleep 10
-        done
-        exit 1
-      register: api_check
+        echo "=== etcd logs ==="
+        crictl logs $(crictl ps -a | grep etcd | awk '{print $1}')
+        echo "=== kube-apiserver logs ==="
+        crictl logs $(crictl ps -a | grep kube-apiserver | awk '{print $1}')
+      register: component_logs
       ignore_errors: yes
+
+    - name: Display component logs
+      debug:
+        var: component_logs.stdout_lines
+
+    - name: Fix etcd configuration
+      shell: |
+        # Ensure etcd directory permissions
+        mkdir -p /var/lib/etcd
+        chmod 700 /var/lib/etcd
+        chown -R root:root /var/lib/etcd
+        
+        # Fix etcd certificates
+        chmod 600 /etc/kubernetes/pki/etcd/*.key
+        chmod 600 /etc/kubernetes/pki/etcd/*.crt
+        chmod 700 /etc/kubernetes/pki/etcd
+        
+        # Update etcd manifest
+        sed -i 's#hostPath:#hostPath:\n      path: /var/lib/etcd#' /etc/kubernetes/manifests/etcd.yaml
+        
+        # Restart services
+        systemctl restart containerd
+        systemctl restart kubelet
+      ignore_errors: yes
+
+    - name: Wait for new containers
+      shell: |
+        sleep 30
+        echo "=== New Container Status ==="
+        crictl ps -a
+      register: new_status
+      ignore_errors: yes
+
+    - name: Display new status
+      debug:
+        var: new_status.stdout_lines
 
     - name: Remove master node taint
       command: kubectl taint nodes --all node-role.kubernetes.io/control-plane-
