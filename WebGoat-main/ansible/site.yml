@@ -64,6 +64,7 @@
           - kubelet
           - kubeadm
           - kubectl
+          - containerd.io
         update_cache: yes
         state: present
 
@@ -85,13 +86,6 @@
       file:
         path: /etc/systemd/system/docker.service.d
         state: directory
-
-    - name: Restart Docker
-      systemd:
-        name: docker
-        state: restarted
-        daemon_reload: yes
-        enabled: yes
 
     - name: Disable swap
       command: swapoff -a
@@ -154,54 +148,130 @@
         lsof -ti:6443 | xargs kill -9 || true
       ignore_errors: yes
 
-    # Initialisation Kubernetes
+    # Stop and cleanup services
+    - name: Stop all services
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+      with_items:
+        - kubelet
+        - docker
+        - containerd
+      ignore_errors: yes
+
+    - name: Clean up network configurations
+      shell: |
+        ip link delete docker0 || true
+        ip link delete cni0 || true
+        ip link delete flannel.1 || true
+        rm -rf /var/lib/cni/
+        rm -rf /etc/cni/
+      ignore_errors: yes
+
+    - name: Clean containerd state
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /var/run/containerd
+        - /var/lib/containerd
+        - /etc/containerd/config.toml
+      ignore_errors: yes
+
+    - name: Reconfigure containerd
+      shell: |
+        mkdir -p /etc/containerd
+        containerd config default | tee /etc/containerd/config.toml
+        sed -i 's/SystemdCgroup \= false/SystemdCgroup \= true/g' /etc/containerd/config.toml
+
+    - name: Restart containerd
+      systemd:
+        name: containerd
+        state: restarted
+        daemon_reload: yes
+        enabled: yes
+
+    - name: Wait for containerd socket
+      wait_for:
+        path: /run/containerd/containerd.sock
+        state: present
+        timeout: 30
+
+    - name: Verify containerd status
+      shell: ctr version
+      register: containerd_status
+      ignore_errors: yes
+
+    - name: Show containerd status
+      debug:
+        var: containerd_status.stdout_lines
+
+    # Restart other services
+    - name: Restart Docker
+      systemd:
+        name: docker
+        state: restarted
+        daemon_reload: yes
+        enabled: yes
+
+    - name: Start kubelet
+      systemd:
+        name: kubelet
+        state: started
+        enabled: yes
+      ignore_errors: yes
+
+    # Initialize Kubernetes
     - name: Initialize Kubernetes cluster
-      command: >
-        kubeadm init 
-        --pod-network-cidr=192.168.0.0/16 
-        --ignore-preflight-errors=all
-        --apiserver-bind-port=6443
+      shell: |
+        kubeadm init \
+        --pod-network-cidr=192.168.0.0/16 \
+        --ignore-preflight-errors=all \
+        --cri-socket unix:///run/containerd/containerd.sock \
+        --v=5 \
+        2>&1 | tee /var/log/kubeadm-init.log
       register: kubeadm_init
       ignore_errors: yes
 
-    - name: Create kube directory
-      file:
-        path: /home/azureuser/.kube
-        state: directory
-        owner: azureuser
-        group: azureuser
-        mode: '0755'
+    - name: Show kubeadm init log
+      command: cat /var/log/kubeadm-init.log
+      register: init_log
+      when: kubeadm_init.rc != 0
+
+    # Configure kubectl for user
+    - name: Wait for kubeconfig
+      wait_for:
+        path: /etc/kubernetes/admin.conf
+        state: present
+        timeout: 60
+      ignore_errors: yes
 
     - name: Copy kube config
-      copy:
-        src: /etc/kubernetes/admin.conf
-        dest: /home/azureuser/.kube/config
-        remote_src: yes
-        owner: azureuser
-        group: azureuser
-        mode: '0600'
+      shell: |
+        mkdir -p /home/azureuser/.kube
+        cp -f /etc/kubernetes/admin.conf /home/azureuser/.kube/config
+        chown -R azureuser:azureuser /home/azureuser/.kube
       when: kubeadm_init.rc == 0
 
-    # Installation Calico CNI avec vérification
+    # Install Calico CNI
     - name: Download Calico manifest
       get_url:
         url: https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/calico.yaml
         dest: /home/azureuser/calico.yaml
       become_user: azureuser
 
-    # Installation Calico CNI
     - name: Install Calico network
-      command: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/calico.yaml
+      command: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/calico.yaml --validate=false
       become_user: azureuser
 
-    # Installation Helm
+    # Install Helm
     - name: Download and install Helm
       shell: |
         curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
         chmod 700 get_helm.sh
         ./get_helm.sh
 
-    # Attendre que les pods Calico soient prêts
+    # Wait for pods
     - name: Wait for Calico pods
       command: kubectl wait --for=condition=Ready pods --all -n kube-system --timeout=300s
       become_user: azureuser
@@ -210,7 +280,7 @@
       delay: 30
       until: calico_pods.rc == 0
 
-    # Création des namespaces
+    # Create namespaces
     - name: Create namespaces
       command: "{{ item }}"
       with_items:
@@ -219,7 +289,7 @@
       ignore_errors: yes
       become_user: azureuser
 
-    # Déploiement des manifests WebGoat
+    # Deploy WebGoat
     - name: Deploy WebGoat resources
       command: kubectl apply -f {{ item }}
       with_items:
@@ -230,7 +300,7 @@
         - manifests/service.yml
       become_user: azureuser
 
-    # Installation Prometheus et Grafana
+    # Install Prometheus and Grafana
     - name: Add Helm repositories
       command: "{{ item }}"
       with_items:
@@ -255,7 +325,7 @@
       become_user: azureuser
       ignore_errors: yes
 
-    # Vérification des déploiements
+    # Verify deployment
     - name: Wait for pods
       shell: |
         kubectl wait --for=condition=Ready pods --all -n webgoat --timeout=300s
