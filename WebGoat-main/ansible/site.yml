@@ -202,11 +202,31 @@
         - /etc/containerd/config.toml
       ignore_errors: yes
 
-    - name: Reconfigure containerd
+    - name: Configure containerd
       shell: |
-        mkdir -p /etc/containerd
-        containerd config default | tee /etc/containerd/config.toml
-        sed -i 's/SystemdCgroup \= false/SystemdCgroup \= true/g' /etc/containerd/config.toml
+        cat > /etc/containerd/config.toml << EOF
+        version = 2
+        root = "/var/lib/containerd"
+        state = "/run/containerd"
+        
+        [grpc]
+          address = "/run/containerd/containerd.sock"
+          uid = 0
+          gid = 0
+        
+        [plugins."io.containerd.grpc.v1.cri"]
+          sandbox_image = "registry.k8s.io/pause:3.9"
+          [plugins."io.containerd.grpc.v1.cri".containerd]
+            default_runtime_name = "runc"
+            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+              runtime_type = "io.containerd.runc.v2"
+              [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+                SystemdCgroup = true
+        EOF
+        
+        systemctl restart containerd
+        systemctl restart kubelet
+      ignore_errors: yes
 
     - name: Restart containerd
       systemd:
@@ -303,50 +323,85 @@
       ignore_errors: yes
 
     # Get etcd and apiserver logs
-    - name: Get etcd and apiserver logs
+    - name: Get detailed container logs
       shell: |
-        echo "=== etcd logs ==="
-        crictl logs $(crictl ps -a | grep etcd | awk '{print $1}')
-        echo "=== kube-apiserver logs ==="
-        crictl logs $(crictl ps -a | grep kube-apiserver | awk '{print $1}')
-      register: component_logs
+        echo "=== etcd container logs ==="
+        for container in $(crictl ps -a | grep etcd | awk '{print $1}'); do
+          echo "Container ID: $container"
+          crictl inspect $container
+          crictl logs $container
+        done
+
+        echo "=== API server container logs ==="
+        for container in $(crictl ps -a | grep kube-apiserver | awk '{print $1}'); do
+          echo "Container ID: $container"
+          crictl inspect $container
+          crictl logs $container
+        done
+      register: detailed_logs
       ignore_errors: yes
 
-    - name: Display component logs
+    - name: Display detailed logs
       debug:
-        var: component_logs.stdout_lines
+        var: detailed_logs.stdout_lines
 
-    - name: Fix etcd configuration
+    - name: Update etcd configuration
       shell: |
-        # Ensure etcd directory permissions
+        # Backup original manifests
+        cp /etc/kubernetes/manifests/etcd.yaml /etc/kubernetes/manifests/etcd.yaml.bak
+        cp /etc/kubernetes/manifests/kube-apiserver.yaml /etc/kubernetes/manifests/kube-apiserver.yaml.bak
+
+        # Move manifests temporarily to force restart
+        mkdir -p /etc/kubernetes/tmp
+        mv /etc/kubernetes/manifests/*.yaml /etc/kubernetes/tmp/
+
+        # Clean up existing state
+        rm -rf /var/lib/etcd/*
         mkdir -p /var/lib/etcd
         chmod 700 /var/lib/etcd
         chown -R root:root /var/lib/etcd
-        
-        # Fix etcd certificates
-        chmod 600 /etc/kubernetes/pki/etcd/*.key
-        chmod 600 /etc/kubernetes/pki/etcd/*.crt
-        chmod 700 /etc/kubernetes/pki/etcd
-        
-        # Update etcd manifest
-        sed -i 's#hostPath:#hostPath:\n      path: /var/lib/etcd#' /etc/kubernetes/manifests/etcd.yaml
-        
+
+        # Wait for cleanup
+        sleep 30
+
+        # Restore manifests
+        mv /etc/kubernetes/tmp/*.yaml /etc/kubernetes/manifests/
+
         # Restart services
         systemctl restart containerd
         systemctl restart kubelet
-      ignore_errors: yes
 
-    - name: Wait for new containers
-      shell: |
+        # Wait for pods
         sleep 30
-        echo "=== New Container Status ==="
         crictl ps -a
-      register: new_status
+      register: etcd_fix
       ignore_errors: yes
 
-    - name: Display new status
+    - name: Show etcd fix results
       debug:
-        var: new_status.stdout_lines
+        var: etcd_fix.stdout_lines
+
+    - name: Check component health
+      shell: |
+        # Check etcd health
+        ETCDCTL_API=3 etcdctl \
+        --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+        --cert=/etc/kubernetes/pki/etcd/server.crt \
+        --key=/etc/kubernetes/pki/etcd/server.key \
+        --endpoints=https://127.0.0.1:2379 \
+        endpoint health || true
+
+        # Check API server health
+        curl -k https://localhost:6443/healthz || true
+
+        # Show running containers
+        crictl ps -a
+      register: health_check
+      ignore_errors: yes
+
+    - name: Display health check results
+      debug:
+        var: health_check.stdout_lines
 
     - name: Remove master node taint
       command: kubectl taint nodes --all node-role.kubernetes.io/control-plane-
@@ -465,12 +520,4 @@
 
     - name: Get service URLs
       shell: |
-        echo "WebGoat URL: http://$(curl -s ifconfig.me):$(kubectl get svc -n webgoat webgoat -o jsonpath='{.spec.ports[0].nodePort}')"
-        echo "Grafana URL: http://$(curl -s ifconfig.me):$(kubectl get svc -n monitoring grafana -o jsonpath='{.spec.ports[0].nodePort}')"
-      register: service_urls
-      become_user: azureuser
-      ignore_errors: yes
-
-    - name: Display service URLs
-      debug:
-        var: service_urls.stdout_lines
+        echo
