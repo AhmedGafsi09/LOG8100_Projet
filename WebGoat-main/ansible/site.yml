@@ -265,34 +265,66 @@
         enabled: yes
       ignore_errors: yes
 
-    # Initialize Kubernetes
+    # Pre-pull required images
+    - name: Pre-pull required images
+      shell: |
+        kubeadm config images pull --v=5
+      register: image_pull
+      ignore_errors: yes
+
+    - name: Display image pull results
+      debug:
+        var: image_pull.stdout_lines
+
+    # Initialize Kubernetes cluster
     - name: Initialize Kubernetes cluster
       shell: |
         kubeadm init \
-        --pod-network-cidr=192.168.0.0/16 \
-        --upload-certs \
-        --ignore-preflight-errors=all \
-        --v=5 \
-        --cri-socket unix:///run/containerd/containerd.sock \
-        --skip-phases=addon/kube-proxy \
-        2>&1 | tee /var/log/kubeadm-init.log
+          --pod-network-cidr=192.168.0.0/16 \
+          --upload-certs \
+          --ignore-preflight-errors=all \
+          --v=5 \
+          --cri-socket=unix:///run/containerd/containerd.sock \
+          --control-plane-endpoint="$(hostname):6443" \
+          > /var/log/kubeadm-init.log 2>&1
       register: kubeadm_init
       ignore_errors: yes
 
-    - name: Get init logs
+    - name: Show init log
       shell: |
-        echo "=== Kubeadm Init Log ==="
+        echo "=== kubeadm init log ==="
         cat /var/log/kubeadm-init.log
-        echo "=== Kubelet Status ==="
+        echo "=== kubelet status ==="
         systemctl status kubelet
-        echo "=== Kubelet Logs ==="
-        journalctl -u kubelet --no-pager | tail -n 50
-      register: init_logs
+        echo "=== kubelet logs ==="
+        journalctl -xeu kubelet --no-pager | tail -n 50
+      register: init_results
       ignore_errors: yes
 
-    - name: Display init logs
+    - name: Display init results
       debug:
-        var: init_logs.stdout_lines
+        var: init_results.stdout_lines
+
+    - name: Wait for kubelet to settle
+      shell: |
+        # Wait for kubelet to be running
+        for i in $(seq 1 30); do
+          if systemctl is-active kubelet > /dev/null; then
+            echo "Kubelet is running"
+            break
+          fi
+          echo "Waiting for kubelet... attempt $i"
+          sleep 5
+        done
+        
+        # Show systemd status
+        systemctl status kubelet --no-pager
+      register: kubelet_status
+      ignore_errors: yes
+
+    - name: Display kubelet status
+      debug:
+        var: kubelet_status.stdout_lines
 
     # Verify control plane components
     - name: Verify control plane components
@@ -336,188 +368,3 @@
         for container in $(crictl ps -a | grep kube-apiserver | awk '{print $1}'); do
           echo "Container ID: $container"
           crictl inspect $container
-          crictl logs $container
-        done
-      register: detailed_logs
-      ignore_errors: yes
-
-    - name: Display detailed logs
-      debug:
-        var: detailed_logs.stdout_lines
-
-    - name: Update etcd configuration
-      shell: |
-        # Backup original manifests
-        cp /etc/kubernetes/manifests/etcd.yaml /etc/kubernetes/manifests/etcd.yaml.bak
-        cp /etc/kubernetes/manifests/kube-apiserver.yaml /etc/kubernetes/manifests/kube-apiserver.yaml.bak
-
-        # Move manifests temporarily to force restart
-        mkdir -p /etc/kubernetes/tmp
-        mv /etc/kubernetes/manifests/*.yaml /etc/kubernetes/tmp/
-
-        # Clean up existing state
-        rm -rf /var/lib/etcd/*
-        mkdir -p /var/lib/etcd
-        chmod 700 /var/lib/etcd
-        chown -R root:root /var/lib/etcd
-
-        # Wait for cleanup
-        sleep 30
-
-        # Restore manifests
-        mv /etc/kubernetes/tmp/*.yaml /etc/kubernetes/manifests/
-
-        # Restart services
-        systemctl restart containerd
-        systemctl restart kubelet
-
-        # Wait for pods
-        sleep 30
-        crictl ps -a
-      register: etcd_fix
-      ignore_errors: yes
-
-    - name: Show etcd fix results
-      debug:
-        var: etcd_fix.stdout_lines
-
-    - name: Check component health
-      shell: |
-        # Check etcd health
-        ETCDCTL_API=3 etcdctl \
-        --cacert=/etc/kubernetes/pki/etcd/ca.crt \
-        --cert=/etc/kubernetes/pki/etcd/server.crt \
-        --key=/etc/kubernetes/pki/etcd/server.key \
-        --endpoints=https://127.0.0.1:2379 \
-        endpoint health || true
-
-        # Check API server health
-        curl -k https://localhost:6443/healthz || true
-
-        # Show running containers
-        crictl ps -a
-      register: health_check
-      ignore_errors: yes
-
-    - name: Display health check results
-      debug:
-        var: health_check.stdout_lines
-
-    - name: Remove master node taint
-      command: kubectl taint nodes --all node-role.kubernetes.io/control-plane-
-      become_user: azureuser
-      ignore_errors: yes
-
-    - name: Verify cluster info
-      command: kubectl cluster-info
-      become_user: azureuser
-      register: cluster_info
-      retries: 10
-      delay: 10
-      until: cluster_info.rc == 0
-
-    - name: Display cluster info
-      debug:
-        var: cluster_info.stdout_lines
-
-    # Install Calico CNI
-    - name: Download Calico manifest
-      get_url:
-        url: https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/calico.yaml
-        dest: /home/azureuser/calico.yaml
-      become_user: azureuser
-
-    - name: Install Calico manifest locally
-      command: kubectl apply -f /home/azureuser/calico.yaml --validate=false
-      become_user: azureuser
-      retries: 3
-      delay: 10
-
-    - name: Wait for Calico pods
-      shell: |
-        kubectl -n kube-system wait --for=condition=Ready pods -l k8s-app=calico-node --timeout=300s
-        kubectl -n kube-system wait --for=condition=Ready pods -l k8s-app=calico-kube-controllers --timeout=300s
-      become_user: azureuser
-      register: calico_pods
-      retries: 10
-      delay: 30
-      until: calico_pods.rc == 0
-
-    # Install Helm
-    - name: Download and install Helm
-      shell: |
-        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-        chmod 700 get_helm.sh
-        ./get_helm.sh
-
-    # Create namespaces
-    - name: Create namespaces
-      command: "{{ item }}"
-      with_items:
-        - kubectl create namespace webgoat
-        - kubectl create namespace monitoring
-      ignore_errors: yes
-      become_user: azureuser
-
-    # Deploy WebGoat
-    - name: Deploy WebGoat resources
-      command: kubectl apply -f {{ item }}
-      with_items:
-        - manifests/resource-quota.yml
-        - manifests/service-account.yml
-        - manifests/network-policy.yml
-        - manifests/deployment.yml
-        - manifests/service.yml
-      become_user: azureuser
-
-    # Install Prometheus and Grafana
-    - name: Add Helm repositories
-      command: "{{ item }}"
-      with_items:
-        - helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-        - helm repo add grafana https://grafana.github.io/helm-charts
-        - helm repo update
-      become_user: azureuser
-
-    - name: Install Prometheus
-      command: >
-        helm install prometheus prometheus-community/kube-prometheus-stack
-        --namespace monitoring
-        -f ../kubernetes/prometheus-values.yaml
-      become_user: azureuser
-      ignore_errors: yes
-
-    - name: Install Grafana
-      command: >
-        helm install grafana grafana/grafana
-        --namespace monitoring
-        -f ../kubernetes/grafana-values.yaml
-      become_user: azureuser
-      ignore_errors: yes
-
-    # Verify deployment
-    - name: Wait for pods
-      shell: |
-        kubectl wait --for=condition=Ready pods --all -n webgoat --timeout=300s
-        kubectl wait --for=condition=Ready pods --all -n monitoring --timeout=300s
-      become_user: azureuser
-      ignore_errors: yes
-
-    - name: Get deployment status
-      shell: |
-        echo "=== Nodes ==="
-        kubectl get nodes
-        echo "=== Pods ==="
-        kubectl get pods --all-namespaces
-        echo "=== Services ==="
-        kubectl get services --all-namespaces
-      register: deployment_status
-      become_user: azureuser
-
-    - name: Show deployment status
-      debug:
-        var: deployment_status.stdout_lines
-
-    - name: Get service URLs
-      shell: |
-        echo
