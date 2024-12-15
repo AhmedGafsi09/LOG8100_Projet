@@ -31,36 +31,46 @@ jobs:
           CLIENT_KEY: ${{ secrets.KUBE_CLIENT_KEY }}
         run: |
           mkdir -p $HOME/.kube
-          echo '{
-            "apiVersion": "v1",
-            "clusters": [{
-              "cluster": {
-                "insecure-skip-tls-verify": true,
-                "server": "https://20.63.16.243:6443"
-              },
-              "name": "kubernetes"
-            }],
-            "contexts": [{
-              "context": {
-                "cluster": "kubernetes",
-                "user": "kubernetes-admin"
-              },
-              "name": "kubernetes-admin@kubernetes"
-            }],
-            "current-context": "kubernetes-admin@kubernetes",
-            "kind": "Config",
-            "preferences": {},
-            "users": [{
-              "name": "kubernetes-admin",
-              "user": {
-                "client-certificate-data": "$CLIENT_CERT",
-                "client-key-data": "$CLIENT_KEY"
-              }
-            }]
-          }' > $HOME/.kube/config
+          echo "{" > $HOME/.kube/config
+          echo "  \"apiVersion\": \"v1\"," >> $HOME/.kube/config
+          echo "  \"clusters\": [{" >> $HOME/.kube/config
+          echo "    \"cluster\": {" >> $HOME/.kube/config
+          echo "      \"insecure-skip-tls-verify\": true," >> $HOME/.kube/config
+          echo "      \"server\": \"https://20.63.16.243:6443\"" >> $HOME/.kube/config
+          echo "    }," >> $HOME/.kube/config
+          echo "    \"name\": \"kubernetes\"" >> $HOME/.kube/config
+          echo "  }]," >> $HOME/.kube/config
+          echo "  \"contexts\": [{" >> $HOME/.kube/config
+          echo "    \"context\": {" >> $HOME/.kube/config
+          echo "      \"cluster\": \"kubernetes\"," >> $HOME/.kube/config
+          echo "      \"user\": \"kubernetes-admin\"" >> $HOME/.kube/config
+          echo "    }," >> $HOME/.kube/config
+          echo "    \"name\": \"kubernetes-admin@kubernetes\"" >> $HOME/.kube/config
+          echo "  }]," >> $HOME/.kube/config
+          echo "  \"current-context\": \"kubernetes-admin@kubernetes\"," >> $HOME/.kube/config
+          echo "  \"kind\": \"Config\"," >> $HOME/.kube/config
+          echo "  \"preferences\": {}," >> $HOME/.kube/config
+          echo "  \"users\": [{" >> $HOME/.kube/config
+          echo "    \"name\": \"kubernetes-admin\"," >> $HOME/.kube/config
+          echo "    \"user\": {" >> $HOME/.kube/config
+          echo "      \"client-certificate-data\": \"$CLIENT_CERT\"," >> $HOME/.kube/config
+          echo "      \"client-key-data\": \"$CLIENT_KEY\"" >> $HOME/.kube/config
+          echo "    }" >> $HOME/.kube/config
+          echo "  }]" >> $HOME/.kube/config
+          echo "}" >> $HOME/.kube/config
           chmod 600 $HOME/.kube/config
 
-      - name: Verify cluster access
+      - name: Verify Kubernetes Config File
         run: |
+          echo "Verifying kubeconfig file:"
+          echo "File content:"
+          cat $HOME/.kube/config
+
+          echo "Checking file size:"
+          ls -lh $HOME/.kube/config
+
+      - name: Verify Kubernetes Connection
+        run: |
+          echo "Testing Kubernetes config..."
           kubectl config view --raw
           kubectl cluster-info
