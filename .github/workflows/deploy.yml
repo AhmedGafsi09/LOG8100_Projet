@@ -31,6 +31,7 @@ jobs:
           CLIENT_KEY: ${{ secrets.KUBE_CLIENT_KEY }}
         run: |
           mkdir -p $HOME/.kube
+          echo "Creating kubeconfig..."
           echo "{" > $HOME/.kube/config
           echo "  \"apiVersion\": \"v1\"," >> $HOME/.kube/config
           echo "  \"clusters\": [{" >> $HOME/.kube/config
@@ -68,6 +69,24 @@ jobs:
 
           echo "Checking file size:"
           ls -lh $HOME/.kube/config
+
+          echo "Validating Base64 data:"
+          echo "${{ secrets.KUBE_CLIENT_CERT }}" | base64 -d > /dev/null || echo "KUBE_CLIENT_CERT is invalid!"
+          echo "${{ secrets.KUBE_CLIENT_KEY }}" | base64 -d > /dev/null || echo "KUBE_CLIENT_KEY is invalid!"
+
+      - name: Debug Kubernetes Connection
+        run: |
+          echo "Validating Kubernetes connection:"
+          echo "Server address: https://20.63.16.243:6443"
+
+          echo "Checking cluster API server reachability:"
+          curl -k https://20.63.16.243:6443/healthz || echo "Cluster API server is not reachable."
+
+          echo "Attempting to view kubeconfig raw output:"
+          kubectl config view --raw || echo "Failed to view kubeconfig."
+
+          echo "Testing cluster-info:"
+          kubectl cluster-info || echo "Failed to retrieve cluster info."
 
       - name: Verify Kubernetes Connection
         run: |
