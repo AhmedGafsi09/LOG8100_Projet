@@ -30,6 +30,8 @@ jobs:
             mkdir -p $HOME/.kube
             echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
             chmod 600 $HOME/.kube/config
+            cat $HOME/.kube/config
+
             
       - name: Verify Kubernetes Configuration
         run: |
