@@ -34,7 +34,15 @@ jobs:
           EOF
           chmod 600 ~/.kube/config
 
+      - name: Verify Kubernetes Configuration
+        run: |
+          kubectl config view
+          kubectl cluster-info
+          kubectl get nodes
+          echo "Testing API server connection..."
+          curl -k https://20.63.16.243:6443/version
+
       - name: Deploy WebGoat
         run: |
-          kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
-          kubectl apply -f k8s/webgoat.yaml -n webgoat
+          kubectl create namespace webgoat --dry-run=client -o yaml --validate=false | kubectl apply -f -
+          kubectl apply -f k8s/webgoat.yaml -n webgoat --validate=false
