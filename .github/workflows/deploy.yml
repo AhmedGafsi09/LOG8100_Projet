@@ -35,11 +35,9 @@ jobs:
           KUBECONFIG: ${{ secrets.KUBECONFIG }}
         run: |
           mkdir -p $HOME/.kube
-          echo "$KUBECONFIG" | tr -d ' ' | base64 -d > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
+          echo "$KUBECONFIG" > $HOME/.kube/config
           
-          # Debug (showing non-sensitive parts only)
-          grep 'server:' $HOME/.kube/config || true
+          kubectl config view --raw --minify --flatten --output=jsonpath='{.clusters[].cluster.server}'
           
           # Validate kubeconfig
           kubectl cluster-info
