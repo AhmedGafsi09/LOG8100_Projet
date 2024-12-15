@@ -121,5 +121,9 @@ jobs:
           IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/log8100_projet
 
   deploy-webgoat:
-    needs: deploy
-    uses: ./.github/workflows/webgoat-deploy.yml
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy WebGoat Application
+        run: |
+          kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f k8s/webgoat.yaml -n webgoat
