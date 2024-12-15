@@ -18,11 +18,8 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_PRIVATE_KEY }}" > ~/.ssh/aks-node-1_key.pem
           chmod 600 ~/.ssh/aks-node-1_key.pem
-
-      - name: Add SSH Host Key to Known Hosts
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H 20.63.16.243 >> ~/.ssh/known_hosts
+          echo "StrictHostKeyChecking no" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
 
       - name: Install Python and Ansible
         run: |
@@ -62,8 +59,9 @@ jobs:
           echo "        \"apiVersion\": \"client.authentication.k8s.io/v1beta1\"," >> $HOME/.kube/config
           echo "        \"command\": \"ssh\"," >> $HOME/.kube/config
           echo "        \"args\": [" >> $HOME/.kube/config
-          echo "          \"-i\"," >> $HOME/.kube/config
-          echo "          \"~/.ssh/aks-node-1_key.pem\"," >> $HOME/.kube/config
+          echo "          \"-o\", \"StrictHostKeyChecking=no\"," >> $HOME/.kube/config
+          echo "          \"-o\", \"BatchMode=yes\"," >> $HOME/.kube/config
+          echo "          \"-i\", \"~/.ssh/aks-node-1_key.pem\"," >> $HOME/.kube/config
           echo "          \"azureuser@20.63.16.243\"" >> $HOME/.kube/config
           echo "        ]" >> $HOME/.kube/config
           echo "      }" >> $HOME/.kube/config
