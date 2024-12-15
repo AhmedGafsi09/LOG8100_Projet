@@ -19,6 +19,11 @@ jobs:
           echo "${{ secrets.VM_PRIVATE_KEY }}" > ~/.ssh/aks-node-1_key.pem
           chmod 600 ~/.ssh/aks-node-1_key.pem
 
+      - name: Add SSH Host Key to Known Hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H 20.63.16.243 >> ~/.ssh/known_hosts
+
       - name: Install Python and Ansible
         run: |
           sudo apt-get update
