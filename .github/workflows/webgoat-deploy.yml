@@ -25,21 +25,24 @@ jobs:
           mkdir -p ~/.kube
           scp -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243:.kube/config ~/.kube/config
           chmod 600 ~/.kube/config
-          # Ensure we're using the external IP
-          sed -i 's/10.0.0.4/20.63.16.243/g' ~/.kube/config
 
-      - name: Validate Cluster Connection
+      - name: Test Cluster Connection
         run: |
-          kubectl config view
+          echo "Testing cluster connection..."
           kubectl cluster-info
+          
+          echo "Checking node status..."
           kubectl get nodes
+          
+          echo "Checking pods..."
+          kubectl get pods -A
 
       - name: Deploy WebGoat
         run: |
           # Create namespace if it doesn't exist
           kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
 
-          # Create deployment
+          echo "Creating WebGoat deployment..."
           cat << EOF | kubectl apply -f -
           apiVersion: apps/v1
           kind: Deployment
@@ -77,7 +80,7 @@ jobs:
                     periodSeconds: 10
           EOF
 
-          # Create service
+          echo "Creating WebGoat service..."
           cat << EOF | kubectl apply -f -
           apiVersion: v1
           kind: Service
@@ -103,13 +106,16 @@ jobs:
       - name: Verify deployment
         run: |
           echo "Deployment Status:"
-          kubectl get deployment -n webgoat
+          kubectl get deployment -n webgoat -o wide
           
           echo "Pod Status:"
-          kubectl get pods -n webgoat
+          kubectl get pods -n webgoat -o wide
           
           echo "Service Status:"
           kubectl get svc -n webgoat
+          
+          echo "Pod Logs:"
+          kubectl logs -n webgoat -l app=webgoat
           
           echo "Application will be available at:"
           echo "http://20.63.16.243:30080/WebGoat"
