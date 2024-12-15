@@ -9,40 +9,22 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          repository: 'AhmedGafsi09/LOG8100_Projet'
-          path: 'LOG8100_Projet'
 
-      - name: Set up SSH key
+      - name: Set up kubeconfig
         run: |
-          mkdir -p ~/.ssh
+          mkdir -p $HOME/.kube
           echo "${{ secrets.VM_PRIVATE_KEY }}" > ~/.ssh/aks-node-1_key.pem
           chmod 600 ~/.ssh/aks-node-1_key.pem
           ssh-keyscan -H 20.63.16.243 >> ~/.ssh/known_hosts
-
-      - name: Get Kubeconfig from VM
-        run: |
-          mkdir -p ~/.kube
-          scp -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243:.kube/config ~/.kube/config
-          chmod 600 ~/.kube/config
-
-      - name: Test Cluster Connection
-        run: |
-          echo "Testing cluster connection..."
-          kubectl cluster-info
-          
-          echo "Checking node status..."
-          kubectl get nodes
-          
-          echo "Checking pods..."
-          kubectl get pods -A
+          scp -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243:.kube/config $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
 
       - name: Deploy WebGoat
         run: |
-          # Create namespace if it doesn't exist
+          # Create namespace
           kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
 
-          echo "Creating WebGoat deployment..."
+          # Deploy WebGoat
           cat << EOF | kubectl apply -f -
           apiVersion: apps/v1
           kind: Deployment
@@ -61,8 +43,7 @@ jobs:
               spec:
                 containers:
                 - name: webgoat
-                  image: ${{ secrets.DOCKER_USERNAME }}/log8100_projet:latest
-                  imagePullPolicy: Always
+                  image: webgoat/webgoat:latest
                   ports:
                   - containerPort: 8080
                   resources:
@@ -72,15 +53,9 @@ jobs:
                     requests:
                       memory: "512Mi"
                       cpu: "250m"
-                  readinessProbe:
-                    httpGet:
-                      path: /WebGoat
-                      port: 8080
-                    initialDelaySeconds: 30
-                    periodSeconds: 10
           EOF
 
-          echo "Creating WebGoat service..."
+          # Create Service
           cat << EOF | kubectl apply -f -
           apiVersion: v1
           kind: Service
@@ -95,27 +70,22 @@ jobs:
             - port: 8080
               targetPort: 8080
               nodePort: 30080
-              name: http
           EOF
 
       - name: Wait for deployment
         run: |
-          echo "Waiting for deployment to be ready..."
           kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
 
       - name: Verify deployment
         run: |
           echo "Deployment Status:"
-          kubectl get deployment -n webgoat -o wide
+          kubectl get deployments -n webgoat
           
           echo "Pod Status:"
-          kubectl get pods -n webgoat -o wide
+          kubectl get pods -n webgoat
           
           echo "Service Status:"
           kubectl get svc -n webgoat
           
-          echo "Pod Logs:"
-          kubectl logs -n webgoat -l app=webgoat
-          
-          echo "Application will be available at:"
+          echo "WebGoat will be accessible at:"
           echo "http://20.63.16.243:30080/WebGoat"
