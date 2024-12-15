@@ -1,52 +1,114 @@
 name: Deploy WebGoat
+
 on:
-  workflow_call:
-  workflow_dispatch:
+  workflow_dispatch: # Permet un déclenchement manuel du workflow
+
 jobs:
   deploy-webgoat:
     runs-on: ubuntu-latest
+
     steps:
+      # Étape 1 : Cloner le dépôt
       - name: Checkout Code
         uses: actions/checkout@v3
-      
+
+      # Étape 2 : Préparer le fichier KUBECONFIG
       - name: Prepare KUBECONFIG
         run: |
-          echo "Creating .kube directory"
+          echo "Setting up kubeconfig directory"
           mkdir -p ~/.kube
-          
+
           echo "Checking if KUBECONFIG_CONTENT secret exists"
           if [ -z "${{ secrets.KUBECONFIG_CONTENT }}" ]; then
-            echo "Error: KUBECONFIG_CONTENT secret is not set"
+            echo "Error: KUBECONFIG_CONTENT secret is not set. Please add it to your repository secrets."
             exit 1
           fi
-          
-          echo "Decoding and writing kubeconfig"
+
+          echo "Decoding and creating kubeconfig file"
           echo "${{ secrets.KUBECONFIG_CONTENT }}" | base64 -d > ~/.kube/config
-          
-          echo "Verifying kubeconfig file"
-          if [ ! -f ~/.kube/config ]; then
-            echo "Error: Kubeconfig file was not created successfully"
-            exit 1
-          fi
-          
+
+          echo "Setting permissions for kubeconfig file"
           chmod 600 ~/.kube/config
-          ls -l ~/.kube/config
-        
+
+          echo "Kubeconfig setup completed successfully"
+
+      # Étape 3 : Vérifier la connexion au cluster Kubernetes
+      - name: Verify Kubernetes Connection
         env:
           KUBECONFIG: ~/.kube/config
-      
-      - name: Debug KUBECONFIG Contents
         run: |
-          echo "Kubeconfig file contents:"
-          cat ~/.kube/config || echo "Failed to read kubeconfig"
-      
-      - name: Set KUBECONFIG Environment
-        run: |
-          export KUBECONFIG=~/.kube/config
-          echo "KUBECONFIG path: $KUBECONFIG"
-      
-      - name: Verify Cluster Connection
-        run: |
+          echo "Verifying Kubernetes cluster connection..."
           kubectl config view
           kubectl cluster-info
           kubectl get nodes
+
+      # Étape 4 : Déployer WebGoat
+      - name: Deploy WebGoat
+        env:
+          KUBECONFIG: ~/.kube/config
+        run: |
+          echo "Creating WebGoat namespace"
+          kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
+
+          echo "Deploying WebGoat application"
+          cat << EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: webgoat
+            namespace: webgoat
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: webgoat
+            template:
+              metadata:
+                labels:
+                  app: webgoat
+              spec:
+                containers:
+                - name: webgoat
+                  image: webgoat/webgoat:latest
+                  ports:
+                  - containerPort: 8080
+                  resources:
+                    limits:
+                      memory: "1Gi"
+                      cpu: "500m"
+                    requests:
+                      memory: "512Mi"
+                      cpu: "250m"
+          EOF
+
+          echo "Exposing WebGoat service"
+          cat << EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: webgoat
+            namespace: webgoat
+          spec:
+            type: NodePort
+            selector:
+              app: webgoat
+            ports:
+            - port: 8080
+              targetPort: 8080
+              nodePort: 30080
+          EOF
+
+      # Étape 5 : Vérifier le déploiement
+      - name: Wait and Verify Deployment
+        env:
+          KUBECONFIG: ~/.kube/config
+        run: |
+          echo "Waiting for WebGoat deployment to be ready..."
+          kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
+
+          echo "Verifying WebGoat resources"
+          kubectl get deployments -n webgoat
+          kubectl get pods -n webgoat -o wide
+          kubectl get svc -n webgoat
+
+          echo "WebGoat is accessible at: http://20.63.16.243:30080/WebGoat"
