@@ -27,7 +27,7 @@ jobs:
 
       - name: Set up Kubernetes config
         env:
-          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_B64 }}
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
         run: |
           mkdir -p $HOME/.kube
           echo "$KUBE_CONFIG_DATA" | base64 -d > $HOME/.kube/config
