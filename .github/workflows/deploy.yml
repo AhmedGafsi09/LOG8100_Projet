@@ -1,4 +1,5 @@
 name: Deployment
+
 on:
   push:
     branches: [main]
@@ -38,33 +39,33 @@ jobs:
           mkdir -p $HOME/.kube
           echo "$KUBE_CONFIG" > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
-          
+
           # Validate kubeconfig
           if ! kubectl config current-context &>/dev/null; then
             echo "Failed to get current context, recreating config..."
-            cat > $HOME/.kube/config << 'EOF'
-            apiVersion: v1
-            clusters:
-            - cluster:
-                insecure-skip-tls-verify: true
-                server: https://20.63.16.243:6443
-              name: kubernetes
-            contexts:
-            - context:
-                cluster: kubernetes
-                user: kubernetes-admin
-              name: kubernetes-admin@kubernetes
-            current-context: kubernetes-admin@kubernetes
-            kind: Config
-            preferences: {}
-            users:
-            - name: kubernetes-admin
-              user:
-                client-certificate-data: ${KUBE_CLIENT_CERT}
-                client-key-data: ${KUBE_CLIENT_KEY}
-            EOF
+            cat > $HOME/.kube/config <<EOF
+apiVersion: v1
+clusters:
+- cluster:
+    insecure-skip-tls-verify: true
+    server: https://20.63.16.243:6443
+  name: kubernetes
+contexts:
+- context:
+    cluster: kubernetes
+    user: kubernetes-admin
+  name: kubernetes-admin@kubernetes
+current-context: kubernetes-admin@kubernetes
+kind: Config
+preferences: {}
+users:
+- name: kubernetes-admin
+  user:
+    client-certificate-data: ${KUBE_CLIENT_CERT}
+    client-key-data: ${KUBE_CLIENT_KEY}
+EOF
           fi
-          
+
           # Verify configuration
           kubectl config view
           kubectl cluster-info
@@ -80,13 +81,13 @@ jobs:
         run: |
           # Wait for cluster to be ready
           timeout 300 bash -c 'until kubectl get nodes | grep -q "Ready"; do sleep 5; done'
-          
+
           # Check if CNI is already installed
           if ! kubectl get pods -n kube-system | grep -q "calico"; then
             echo "Installing Calico CNI..."
             curl -L https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/tigera-operator.yaml | kubectl apply -f -
             curl -L https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/custom-resources.yaml | kubectl apply -f -
-            
+
             # Wait for Calico to be ready
             timeout 300 bash -c 'until kubectl get pods -n calico-system | grep -q "Running"; do sleep 5; done'
           fi
@@ -107,12 +108,12 @@ jobs:
       - name: Deploy Applications
         run: |
           cd LOG8100_Projet/WebGoat-main/kubernetes
-          
+
           # Apply configurations in order
           kubectl apply -f webgoat-deployment.yml
           kubectl apply -f webgoat-service.yml
           kubectl apply -f service-monitor.yml
-          
+
           # Wait for deployment to be ready
           kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
 
@@ -121,13 +122,13 @@ jobs:
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
           helm repo add grafana https://grafana.github.io/helm-charts
           helm repo update
-          
+
           # Install Prometheus with values
           helm upgrade --install prometheus prometheus-community/prometheus \
             --namespace monitoring \
             -f LOG8100_Projet/WebGoat-main/kubernetes/helm-values/prometheus-values.yaml \
             --wait
-          
+
           # Install Grafana with values
           helm upgrade --install grafana grafana/grafana \
             --namespace monitoring \
@@ -139,15 +140,15 @@ jobs:
           echo "Checking pod status..."
           kubectl get pods -n webgoat
           kubectl get pods -n monitoring
-          
+
           echo "Checking services..."
           kubectl get svc -n webgoat
           kubectl get svc -n monitoring
-          
+
           echo "Checking deployments..."
           kubectl get deployments -n webgoat
           kubectl get deployments -n monitoring
-          
+
           echo "Checking ingress..."
           kubectl get ingress -A
 
@@ -156,9 +157,9 @@ jobs:
         run: |
           echo "=== Kubernetes Cluster Info ==="
           kubectl cluster-info dump
-          
+
           echo "=== Pod Logs ==="
           kubectl get pods -n webgoat -o name | xargs -I {} kubectl logs {} -n webgoat
-          
+
           echo "=== Events ==="
           kubectl get events -A
