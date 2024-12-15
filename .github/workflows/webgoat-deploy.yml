@@ -19,10 +19,13 @@ jobs:
 
       - name: Get Kubeconfig
         run: |
-          # Create kube directory and copy kubeconfig from remote server
-         # mkdir -p $HOME/.kube
-         # ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 'cat ~/.kube/config' > $HOME/.kube/config
-         # chmod 600 $HOME/.kube/config
+          mkdir -p $HOME/.kube
+          ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 'cat ~/.kube/config' > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Debug Kubeconfig
+        run: |
+          cat $HOME/.kube/config
 
       - name: Verify cluster connection
         run: |
@@ -31,10 +34,8 @@ jobs:
 
       - name: Deploy WebGoat
         run: |
-          # Create namespace
           kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
 
-          # Deploy WebGoat
           cat << EOF | kubectl apply -f -
           apiVersion: apps/v1
           kind: Deployment
@@ -65,7 +66,6 @@ jobs:
                       cpu: "250m"
           EOF
 
-          # Create Service
           cat << EOF | kubectl apply -f -
           apiVersion: v1
           kind: Service
@@ -88,14 +88,7 @@ jobs:
 
       - name: Verify deployment
         run: |
-          echo "Deployment Status:"
           kubectl get deployments -n webgoat
-          
-          echo "Pod Status:"
           kubectl get pods -n webgoat -o wide
-          
-          echo "Service Status:"
           kubectl get svc -n webgoat
-          
-          echo "WebGoat will be accessible at:"
-          echo "http://20.63.16.243:30080/WebGoat"
+          echo "WebGoat is accessible at: http://20.63.16.243:30080/WebGoat"
