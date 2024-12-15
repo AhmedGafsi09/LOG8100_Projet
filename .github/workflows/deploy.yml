@@ -29,7 +29,7 @@ jobs:
       - name: Reset Kubernetes on VM
         run: |
           ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 'sudo kubeadm reset -f'
-          
+
       - name: Copy Kubeadm Config to VM
         run: |
           cat > kubeadm-config.yaml << 'EOF'
@@ -61,9 +61,7 @@ jobs:
             mkdir -p $HOME/.kube &&
             sudo cp -f /etc/kubernetes/admin.conf $HOME/.kube/config &&
             sudo chown $(id -u):$(id -g) $HOME/.kube/config &&
-            # Update the server address in kubeconfig to use external IP
             sudo sed -i "s/10.0.0.4/20.63.16.243/" $HOME/.kube/config &&
-            # Verify the change
             kubectl config view | grep server &&
             kubectl get nodes
           '
@@ -76,10 +74,7 @@ jobs:
 
       - name: Update Local Kubeconfig
         run: |
-          # Double-check the server address is using external IP
           sed -i "s/10.0.0.4/20.63.16.243/" $HOME/.kube/config
-          
-          # Verify configuration
           kubectl config view | grep server
           kubectl cluster-info
 
@@ -96,11 +91,7 @@ jobs:
 
       - name: Deploy and Wait for Calico
         run: |
-          # Apply Calico manifest
           kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/calico.yaml
-          
-          # Wait for pods to be created and running
-          echo "Waiting for Calico pods to be created..."
           for i in {1..30}; do
             if kubectl get pods -n kube-system -l k8s-app=calico-node 2>/dev/null | grep -q "calico-node"; then
               echo "Calico pods found, waiting for them to be ready..."
@@ -109,9 +100,6 @@ jobs:
             echo "Attempt $i/30: Waiting for Calico pods to be created..."
             sleep 10
           done
-          
-          # Wait for pods to be ready
-          echo "Waiting for Calico pods to be ready..."
           for i in {1..30}; do
             if kubectl get pods -n kube-system -l k8s-app=calico-node | grep -q "Running"; then
               echo "Calico pods are running!"
@@ -121,13 +109,7 @@ jobs:
             echo "Attempt $i/30: Waiting for Calico pods to be ready..."
             sleep 10
           done
-          
-          # Verify network plugin is working
-          echo "Verifying cluster node status..."
           kubectl get nodes -o wide
-          
-          # Check Calico pods status
-          echo "Checking Calico pods status..."
           kubectl get pods -n kube-system | grep calico
 
       - name: Run Ansible Playbook
@@ -137,3 +119,7 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: false
           IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/log8100_projet
+
+  deploy-webgoat:
+    needs: deploy
+    uses: ./.github/workflows/webgoat-deploy.yml
