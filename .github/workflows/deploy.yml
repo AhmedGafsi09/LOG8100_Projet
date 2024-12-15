@@ -51,9 +51,9 @@ jobs:
                 client-key-data: ${CLIENT_KEY}
             EOL
             chmod 600 $HOME/.kube/config
-          env:
-            CLIENT_CERT: ${{ secrets.KUBE_CLIENT_CERT }}
-            CLIENT_KEY: ${{ secrets.KUBE_CLIENT_KEY }}
+        env:
+          CLIENT_CERT: ${{ secrets.KUBE_CLIENT_CERT }}
+          CLIENT_KEY: ${{ secrets.KUBE_CLIENT_KEY }}
             
       - name: Verify cluster access
         run: |
