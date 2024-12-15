@@ -25,10 +25,13 @@ jobs:
           sudo apt-get install -y python3-pip
           pip install --user ansible
 
-      - name: Set up Kubernetes config 
+      - name: Set up Kubernetes config
+        env:
+          KUBE_CLIENT_CERT: ${{ secrets.KUBE_CLIENT_CERT }}
+          KUBE_CLIENT_KEY: ${{ secrets.KUBE_CLIENT_KEY }}
         run: |
           mkdir -p $HOME/.kube
-          cat > $HOME/.kube/config << 'EOF'
+          cat > $HOME/.kube/config << EOF
           apiVersion: v1
           clusters:
           - cluster:
@@ -46,10 +49,13 @@ jobs:
           users:
           - name: kubernetes-admin
             user:
-              client-certificate-data: ${{ secrets.KUBE_CLIENT_CERT }}
-              client-key-data: ${{ secrets.KUBE_CLIENT_KEY }}
+              client-certificate-data: ${KUBE_CLIENT_CERT}
+              client-key-data: ${KUBE_CLIENT_KEY}
           EOF
           chmod 600 $HOME/.kube/config
+
+          # Debug: Check if the config file has content (optional)
+          cat $HOME/.kube/config
 
       - name: Test Ansible Connection
         run: |
@@ -78,4 +84,9 @@ jobs:
 
       - name: Deploy Applications
         run: |
-          kubectl
+          kubectl apply -f deployment.yml
+          kubectl apply -f service.yml
+
+      - name: Debug Kubernetes Cluster
+        run: |
+          kubectl cluster-info dump
