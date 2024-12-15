@@ -1,8 +1,8 @@
 name: Deploy WebGoat
 
 on:
-  workflow_dispatch: # Permet un déclenchement manuel du workflow
-
+  workflow_call:
+  workflow_dispatch:
 jobs:
   deploy-webgoat:
     runs-on: ubuntu-latest
@@ -39,8 +39,8 @@ jobs:
         run: |
           echo "Verifying Kubernetes cluster connection..."
           kubectl config view
-          kubectl cluster-info
-          kubectl get nodes
+          kubectl cluster-info || exit 1
+          kubectl get nodes || exit 1
 
       # Étape 4 : Déployer WebGoat
       - name: Deploy WebGoat
@@ -48,7 +48,7 @@ jobs:
           KUBECONFIG: ~/.kube/config
         run: |
           echo "Creating WebGoat namespace"
-          kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f - || exit 1
 
           echo "Deploying WebGoat application"
           cat << EOF | kubectl apply -f -
@@ -104,11 +104,11 @@ jobs:
           KUBECONFIG: ~/.kube/config
         run: |
           echo "Waiting for WebGoat deployment to be ready..."
-          kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
+          kubectl rollout status deployment/webgoat -n webgoat --timeout=300s || exit 1
 
           echo "Verifying WebGoat resources"
-          kubectl get deployments -n webgoat
-          kubectl get pods -n webgoat -o wide
-          kubectl get svc -n webgoat
+          kubectl get deployments -n webgoat || exit 1
+          kubectl get pods -n webgoat -o wide || exit 1
+          kubectl get svc -n webgoat || exit 1
 
           echo "WebGoat is accessible at: http://20.63.16.243:30080/WebGoat"
