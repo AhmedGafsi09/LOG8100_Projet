@@ -46,8 +46,18 @@ jobs:
 
       - name: Check Kubernetes cluster
         run: |
+          # Remplacer l'adresse IP interne par l'adresse IP publique
+          sed -i 's/10.0.0.4/20.63.16.243/g' $HOME/.kube/config
+          
+          # Désactiver la vérification de certificat (temporairement)
+          kubectl config set-cluster kubernetes --insecure-skip-tls-verify=true
+
+          # Vérifier la configuration et les informations du cluster
           kubectl cluster-info
           kubectl get nodes
+
+          # Afficher le contenu du kubeconfig pour vérification
+          cat $HOME/.kube/config | grep server
 
       - name: Deploy CNI (Calico)
         run: |
