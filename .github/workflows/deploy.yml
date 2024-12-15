@@ -27,20 +27,17 @@ jobs:
 
       - name: Set up Kubernetes config
         env:
-          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_B64 }}
         run: |
           mkdir -p $HOME/.kube
-          echo "${KUBECONFIG_DATA}" > $HOME/.kube/config
+          echo "$KUBE_CONFIG_DATA" | base64 -d > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
-          # Verify contents without exposing secrets
-          kubectl config view --minify
-          # Test connection
-          kubectl cluster-info
+          ls -l $HOME/.kube/config
             
-      - name: Verify Kubernetes Configuration
+      - name: Verify cluster access
         run: |
-            kubectl config current-context
-            kubectl cluster-info
+          kubectl config view --raw
+          kubectl cluster-info
 
       - name: Test Ansible Connection
         run: |
