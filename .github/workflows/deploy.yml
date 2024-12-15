@@ -21,53 +21,37 @@ jobs:
           echo "StrictHostKeyChecking no" > ~/.ssh/config
           chmod 600 ~/.ssh/config
 
-      - name: Install Python and Ansible
+      - name: Set up SSH Proxy
         run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-pip
-          pip install --user ansible
+          echo "Setting up SSH proxy..."
+          ssh -i ~/.ssh/aks-node-1_key.pem -f -N -L 6443:localhost:6443 azureuser@20.63.16.243
+          echo "SSH proxy established."
 
       - name: Set up Kubernetes config
-        env:
-          VM_PRIVATE_KEY: ${{ secrets.VM_PRIVATE_KEY }}
         run: |
           mkdir -p $HOME/.kube
-          echo "Creating kubeconfig with SSH exec plugin..."
-          echo "{" > $HOME/.kube/config
-          echo "  \"apiVersion\": \"v1\"," >> $HOME/.kube/config
-          echo "  \"clusters\": [{" >> $HOME/.kube/config
-          echo "    \"cluster\": {" >> $HOME/.kube/config
-          echo "      \"insecure-skip-tls-verify\": true," >> $HOME/.kube/config
-          echo "      \"server\": \"https://20.63.16.243:6443\"" >> $HOME/.kube/config
-          echo "    }," >> $HOME/.kube/config
-          echo "    \"name\": \"kubernetes\"" >> $HOME/.kube/config
-          echo "  }]," >> $HOME/.kube/config
-          echo "  \"contexts\": [{" >> $HOME/.kube/config
-          echo "    \"context\": {" >> $HOME/.kube/config
-          echo "      \"cluster\": \"kubernetes\"," >> $HOME/.kube/config
-          echo "      \"user\": \"azureuser\"" >> $HOME/.kube/config
-          echo "    }," >> $HOME/.kube/config
-          echo "    \"name\": \"azureuser@kubernetes\"" >> $HOME/.kube/config
-          echo "  }]," >> $HOME/.kube/config
-          echo "  \"current-context\": \"azureuser@kubernetes\"," >> $HOME/.kube/config
-          echo "  \"kind\": \"Config\"," >> $HOME/.kube/config
-          echo "  \"preferences\": {}," >> $HOME/.kube/config
-          echo "  \"users\": [{" >> $HOME/.kube/config
-          echo "    \"name\": \"azureuser\"," >> $HOME/.kube/config
-          echo "    \"user\": {" >> $HOME/.kube/config
-          echo "      \"exec\": {" >> $HOME/.kube/config
-          echo "        \"apiVersion\": \"client.authentication.k8s.io/v1beta1\"," >> $HOME/.kube/config
-          echo "        \"command\": \"ssh\"," >> $HOME/.kube/config
-          echo "        \"args\": [" >> $HOME/.kube/config
-          echo "          \"-o\", \"StrictHostKeyChecking=no\"," >> $HOME/.kube/config
-          echo "          \"-o\", \"BatchMode=yes\"," >> $HOME/.kube/config
-          echo "          \"-i\", \"~/.ssh/aks-node-1_key.pem\"," >> $HOME/.kube/config
-          echo "          \"azureuser@20.63.16.243\"" >> $HOME/.kube/config
-          echo "        ]" >> $HOME/.kube/config
-          echo "      }" >> $HOME/.kube/config
-          echo "    }" >> $HOME/.kube/config
-          echo "  }]" >> $HOME/.kube/config
-          echo "}" >> $HOME/.kube/config
+          echo "Creating kubeconfig..."
+          cat <<EOF > $HOME/.kube/config
+apiVersion: v1
+clusters:
+- cluster:
+    insecure-skip-tls-verify: true
+    server: https://localhost:6443
+  name: kubernetes
+contexts:
+- context:
+    cluster: kubernetes
+    user: kubernetes-admin
+  name: kubernetes-admin@kubernetes
+current-context: kubernetes-admin@kubernetes
+kind: Config
+preferences: {}
+users:
+- name: kubernetes-admin
+  user:
+    token: PLACEHOLDER_FOR_TOKEN
+EOF
+          chmod 600 $HOME/.kube/config
 
       - name: Verify Kubernetes Config File
         run: |
