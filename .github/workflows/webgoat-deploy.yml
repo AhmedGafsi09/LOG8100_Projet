@@ -12,56 +12,29 @@ jobs:
       - name: Setup Kubernetes config
         run: |
           mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          cat > ~/.kube/config << EOF
+          apiVersion: v1
+          clusters:
+          - cluster:
+              certificate-authority-data: ${{ secrets.KUBE_CA_DATA }}
+              server: https://20.63.16.243:6443
+            name: kubernetes
+          contexts:
+          - context:
+              cluster: kubernetes
+              user: kubernetes-admin
+            name: kubernetes-admin@kubernetes
+          current-context: kubernetes-admin@kubernetes
+          kind: Config
+          users:
+          - name: kubernetes-admin
+            user:
+              client-certificate-data: ${{ secrets.KUBE_CERT_DATA }}
+              client-key-data: ${{ secrets.KUBE_KEY_DATA }}
+          EOF
           chmod 600 ~/.kube/config
-          # Verify the context is correct
-          kubectl config use-context minikube
-          # Check cluster connectivity
-          kubectl cluster-info
 
       - name: Deploy WebGoat
         run: |
           kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -f k8s/webgoat.yaml -n webgoat
-
----
-
-name: Deploy Kubernetes Config
-on:
-  workflow_dispatch:
-
-jobs:
-  configure-kubeconfig:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Update Local Kubeconfig
-        run: |
-          mkdir -p $HOME/.kube
-          # Copy kubeconfig file from the VM
-          scp -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243:.kube/config $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
-          # Update server address
-          sed -i "s/localhost:8080/20.63.16.243:6443/" $HOME/.kube/config
-          # Verify the configuration
-          kubectl config view
-          kubectl config use-context kubernetes-admin@kubernetes
-          kubectl cluster-info
-
-      - name: Check API Server Connectivity
-        run: |
-          # Verify port accessibility
-          nc -zv 20.63.16.243 6443
-          # Check API server logs
-          ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 'sudo journalctl -u kube-apiserver'
-
----
-
-- name: Configure API Server
-  copy:
-    content: |
-      apiVersion: kubeadm.k8s.io/v1beta3
-      kind: InitConfiguration
-      localAPIEndpoint:
-        advertiseAddress: "20.63.16.243"  # External IP address
-        bindPort: 6443
-    dest: /etc/kubernetes/kubeadm-config.yaml
