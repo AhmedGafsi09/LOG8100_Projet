@@ -10,29 +10,21 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Set up SSH Key
+      - name: Set up KUBECONFIG
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VM_PRIVATE_KEY }}" | base64 -d > ~/.ssh/aks-node-1_key.pem
-          chmod 600 ~/.ssh/aks-node-1_key.pem
-          ssh-keyscan -H 20.63.16.243 >> ~/.ssh/known_hosts
-
-      - name: Fetch Kubeconfig
-        run: |
-          ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 'cat ~/.kube/config' > $HOME/kubeconfig
-          chmod 600 $HOME/kubeconfig
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_CONTENT }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
         env:
-          KUBECONFIG: $HOME/kubeconfig
+          KUBECONFIG: ~/.kube/config
 
       - name: Verify Cluster Connection
         run: |
-          export KUBECONFIG=$HOME/kubeconfig
           kubectl cluster-info
           kubectl get nodes
 
       - name: Deploy WebGoat
         run: |
-          export KUBECONFIG=$HOME/kubeconfig
           kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
           cat << EOF | kubectl apply -f -
           apiVersion: apps/v1
@@ -82,13 +74,11 @@ jobs:
 
       - name: Wait for Deployment
         run: |
-          export KUBECONFIG=$HOME/kubeconfig
           kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
 
       - name: Verify Deployment
         run: |
-          export KUBECONFIG=$HOME/kubeconfig
           kubectl get deployments -n webgoat
           kubectl get pods -n webgoat -o wide
           kubectl get svc -n webgoat
-          echo "WebGoat is accessible at: http://20.63.16.243:30080/WebGoat"
+          echo "WebGoat is accessible at: http://<Your_Node_IP>:30080/WebGoat"
