@@ -44,10 +44,17 @@ jobs:
           ANSIBLE_HOST_KEY_CHECKING: false
           IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/log8100_projet
 
+      - name: Check Kubernetes cluster
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
       - name: Deploy CNI (Calico)
         run: |
-          kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/tigera-operator.yaml
-          kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/custom-resources.yaml
+          curl -LO https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/tigera-operator.yaml
+          curl -LO https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/custom-resources.yaml
+          kubectl apply -f tigera-operator.yaml
+          kubectl apply -f custom-resources.yaml
 
       - name: Deploy Applications
         run: |
