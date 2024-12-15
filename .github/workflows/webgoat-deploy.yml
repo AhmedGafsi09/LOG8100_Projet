@@ -10,14 +10,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up kubeconfig
+      - name: Set up SSH and kubeconfig
         run: |
+          # Create necessary directories
+          mkdir -p $HOME/.ssh
           mkdir -p $HOME/.kube
-          echo "${{ secrets.VM_PRIVATE_KEY }}" > ~/.ssh/aks-node-1_key.pem
-          chmod 600 ~/.ssh/aks-node-1_key.pem
-          ssh-keyscan -H 20.63.16.243 >> ~/.ssh/known_hosts
-          scp -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243:.kube/config $HOME/.kube/config
+          
+          # Setup SSH key
+          echo "${{ secrets.VM_PRIVATE_KEY }}" > $HOME/.ssh/aks-node-1_key.pem
+          chmod 600 $HOME/.ssh/aks-node-1_key.pem
+          
+          # Add host key
+          ssh-keyscan -H 20.63.16.243 >> $HOME/.ssh/known_hosts
+          
+          # Copy kubeconfig from VM
+          scp -i $HOME/.ssh/aks-node-1_key.pem -o StrictHostKeyChecking=no azureuser@20.63.16.243:.kube/config $HOME/.kube/config
           chmod 600 $HOME/.kube/config
+
+      - name: Verify cluster connection
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
 
       - name: Deploy WebGoat
         run: |
