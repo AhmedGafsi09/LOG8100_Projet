@@ -32,13 +32,10 @@ jobs:
           mkdir -p $HOME/.kube
           echo "${KUBECONFIG_DATA}" > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
-          # Verify the certificates are present
-          if ! grep -q "client-certificate-data:" $HOME/.kube/config || \
-             ! grep -q "client-key-data:" $HOME/.kube/config; then
-             echo "Error: Missing required certificate data"
-             cat $HOME/.kube/config
-             exit 1
-          fi
+          # Verify contents without exposing secrets
+          kubectl config view --minify
+          # Test connection
+          kubectl cluster-info
             
       - name: Verify Kubernetes Configuration
         run: |
