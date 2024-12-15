@@ -17,11 +17,16 @@ jobs:
           chmod 600 ~/.kube/config
         env:
           KUBECONFIG: ~/.kube/config
-
+      
+      - name: Debug KUBECONFIG
+        run: |
+          echo "Checking kubeconfig contents:"
+          cat ~/.kube/config || echo "Failed to read kubeconfig"
+      
       - name: Verify Cluster Connection
         run: |
-          kubectl cluster-info
-          kubectl get nodes
+          kubectl --kubeconfig=~/.kube/config cluster-info
+          kubectl --kubeconfig=~/.kube/config get nodes
 
       - name: Deploy WebGoat
         run: |
