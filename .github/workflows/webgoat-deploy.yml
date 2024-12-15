@@ -20,16 +20,17 @@ jobs:
           chmod 600 ~/.ssh/aks-node-1_key.pem
           ssh-keyscan -H 20.63.16.243 >> ~/.ssh/known_hosts
 
-      - name: Set Kubeconfig
+      - name: Get Kubeconfig from VM
         run: |
           mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          scp -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243:.kube/config ~/.kube/config
           chmod 600 ~/.kube/config
-        env:
-          KUBECONFIG: ~/.kube/config
+          # Ensure we're using the external IP
+          sed -i 's/10.0.0.4/20.63.16.243/g' ~/.kube/config
 
       - name: Validate Cluster Connection
         run: |
+          kubectl config view
           kubectl cluster-info
           kubectl get nodes
 
