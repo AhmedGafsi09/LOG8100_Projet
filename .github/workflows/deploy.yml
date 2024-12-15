@@ -25,12 +25,12 @@ jobs:
           sudo apt-get install -y python3-pip
           pip install --user ansible
 
-      - name: Set up Kubernetes config with SSH key and username
+      - name: Set up Kubernetes config
         env:
           VM_PRIVATE_KEY: ${{ secrets.VM_PRIVATE_KEY }}
         run: |
           mkdir -p $HOME/.kube
-          echo "Creating kubeconfig with SSH key and username..."
+          echo "Creating kubeconfig with SSH exec plugin..."
           echo "{" > $HOME/.kube/config
           echo "  \"apiVersion\": \"v1\"," >> $HOME/.kube/config
           echo "  \"clusters\": [{" >> $HOME/.kube/config
@@ -53,22 +53,28 @@ jobs:
           echo "  \"users\": [{" >> $HOME/.kube/config
           echo "    \"name\": \"azureuser\"," >> $HOME/.kube/config
           echo "    \"user\": {" >> $HOME/.kube/config
-          echo "      \"auth-provider\": {" >> $HOME/.kube/config
-          echo "        \"config\": {" >> $HOME/.kube/config
-          echo "          \"client-key-data\": \"$(cat ~/.ssh/aks-node-1_key.pem | base64 | tr -d '\n')\"" >> $HOME/.kube/config
-          echo "        }" >> $HOME/.kube/config
+          echo "      \"exec\": {" >> $HOME/.kube/config
+          echo "        \"apiVersion\": \"client.authentication.k8s.io/v1beta1\"," >> $HOME/.kube/config
+          echo "        \"command\": \"ssh\"," >> $HOME/.kube/config
+          echo "        \"args\": [" >> $HOME/.kube/config
+          echo "          \"-i\"," >> $HOME/.kube/config
+          echo "          \"~/.ssh/aks-node-1_key.pem\"," >> $HOME/.kube/config
+          echo "          \"azureuser@20.63.16.243\"" >> $HOME/.kube/config
+          echo "        ]" >> $HOME/.kube/config
           echo "      }" >> $HOME/.kube/config
           echo "    }" >> $HOME/.kube/config
           echo "  }]" >> $HOME/.kube/config
           echo "}" >> $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
 
       - name: Verify Kubernetes Config File
         run: |
           echo "Verifying kubeconfig file:"
           cat $HOME/.kube/config
 
-      - name: Debug Kubernetes Connection
+          echo "Checking file size:"
+          ls -lh $HOME/.kube/config
+
+      - name: Test Kubernetes Connection
         run: |
           echo "Testing Kubernetes config..."
           kubectl config view --raw
