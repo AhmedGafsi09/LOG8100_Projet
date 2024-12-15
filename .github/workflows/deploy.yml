@@ -61,6 +61,10 @@ jobs:
             mkdir -p $HOME/.kube &&
             sudo cp -f /etc/kubernetes/admin.conf $HOME/.kube/config &&
             sudo chown $(id -u):$(id -g) $HOME/.kube/config &&
+            # Update the server address in kubeconfig to use external IP
+            sudo sed -i "s/10.0.0.4/20.63.16.243/" $HOME/.kube/config &&
+            # Verify the change
+            kubectl config view | grep server &&
             kubectl get nodes
           '
 
@@ -70,10 +74,25 @@ jobs:
           scp -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243:.kube/config $HOME/.kube/config
           chmod 600 $HOME/.kube/config
 
-      - name: Verify Cluster Access
+      - name: Update Local Kubeconfig
         run: |
+          # Double-check the server address is using external IP
+          sed -i "s/10.0.0.4/20.63.16.243/" $HOME/.kube/config
+          
+          # Verify configuration
+          kubectl config view | grep server
           kubectl cluster-info
-          kubectl get nodes
+
+      - name: Wait for Node Ready
+        run: |
+          for i in {1..30}; do
+            if kubectl get nodes | grep -q "Ready"; then
+              echo "Node is Ready"
+              break
+            fi
+            echo "Waiting for node to be ready... ($i/30)"
+            sleep 10
+          done
 
       # Continue with the rest of your deployment steps
       - name: Deploy CNI (Calico)
