@@ -1,7 +1,7 @@
 name: Deploy WebGoat
 on:
-  workflow_call:  # This allows the workflow to be called by other workflows
-  workflow_dispatch:  # This allows manual triggering
+  workflow_call:
+  workflow_dispatch:
 
 jobs:
   deploy-webgoat:
@@ -13,12 +13,19 @@ jobs:
           repository: 'AhmedGafsi09/LOG8100_Projet'
           path: 'LOG8100_Projet'
 
-      - name: Set up Kubernetes config
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_PRIVATE_KEY }}" > ~/.ssh/aks-node-1_key.pem
+          chmod 600 ~/.ssh/aks-node-1_key.pem
+          ssh-keyscan -H 20.63.16.243 >> ~/.ssh/known_hosts
+
+      - name: Get Kubernetes config from VM
         run: |
           mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
+          scp -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243:.kube/config $HOME/.kube/config
           chmod 600 $HOME/.kube/config
-          # Update server address to use external IP
+          # Double-check the server address is using external IP
           sed -i "s/10.0.0.4/20.63.16.243/" $HOME/.kube/config
 
       - name: Verify cluster access
