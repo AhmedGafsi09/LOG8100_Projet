@@ -10,12 +10,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up SSH key
+      - name: Debugging SSH Setup
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VM_PRIVATE_KEY }}" > ~/.ssh/aks-node-1_key.pem
+          echo "Generating SSH key for debugging"
+          ssh-keygen -t rsa -b 4096 -f ~/.ssh/debug_key -N ''
+          cat ~/.ssh/debug_key.pub
+          echo "Contents of secret SSH key:"
+          echo "${{ secrets.VM_PRIVATE_KEY }}" | base64 -d > ~/.ssh/aks-node-1_key.pem
           chmod 600 ~/.ssh/aks-node-1_key.pem
+          cat ~/.ssh/aks-node-1_key.pem
+
+      - name: Verify SSH Connection
+        run: |
           ssh-keyscan -H 20.63.16.243 >> ~/.ssh/known_hosts
+          ssh -vvv -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 'whoami'
 
       - name: Get Kubeconfig
         run: |
@@ -23,11 +31,7 @@ jobs:
           ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 'cat ~/.kube/config' > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
 
-      - name: Debug Kubeconfig
-        run: |
-          cat $HOME/.kube/config
-
-      - name: Verify cluster connection
+      - name: Verify Cluster Connection
         run: |
           kubectl cluster-info
           kubectl get nodes
@@ -35,7 +39,6 @@ jobs:
       - name: Deploy WebGoat
         run: |
           kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
-
           cat << EOF | kubectl apply -f -
           apiVersion: apps/v1
           kind: Deployment
@@ -82,11 +85,10 @@ jobs:
               nodePort: 30080
           EOF
 
-      - name: Wait for deployment
-        run: |
-          kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
+      - name: Wait for Deployment
+        run: kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
 
-      - name: Verify deployment
+      - name: Verify Deployment
         run: |
           kubectl get deployments -n webgoat
           kubectl get pods -n webgoat -o wide
