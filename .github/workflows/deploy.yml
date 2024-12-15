@@ -1,41 +1,39 @@
+name: Deployment
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
----
-  name: Deployment
-  on:
-    push:
-      branches: [main]
-    workflow_dispatch:
-  
-  jobs:
-    deploy:
-      runs-on: ubuntu-latest
-      steps:
-        - uses: actions/checkout@v3
-          with:
-            repository: 'AhmedGafsi09/LOG8100_Projet'
-            path: 'LOG8100_Projet'
-  
-        - name: Set up SSH key
-          run: |
-            mkdir -p ~/.ssh
-            echo "${{ secrets.VM_PRIVATE_KEY }}" > ~/.ssh/aks-node-1_key.pem
-            chmod 600 ~/.ssh/aks-node-1_key.pem
-  
-        - name: Install Python and Ansible
-          run: |
-            sudo apt-get update
-            sudo apt-get install -y python3-pip
-            pip install --user ansible
-  
-        - name: Test Ansible Connection
-          run: |
-            cd LOG8100_Projet/WebGoat-main/ansible
-            ansible -i inventory.yml all -m ping -vvv
-  
-        - name: Run Ansible Playbook
-          run: |
-            cd LOG8100_Projet/WebGoat-main/ansible
-            ansible-playbook -i inventory.yml site.yml -v --forks 10
-          env:
-            ANSIBLE_HOST_KEY_CHECKING: false
-  
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          repository: 'AhmedGafsi09/LOG8100_Projet'
+          path: 'LOG8100_Projet'
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_PRIVATE_KEY }}" > ~/.ssh/aks-node-1_key.pem
+          chmod 600 ~/.ssh/aks-node-1_key.pem
+
+      - name: Install Python and Ansible
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip install --user ansible
+
+      - name: Test Ansible Connection
+        run: |
+          cd LOG8100_Projet/WebGoat-main/ansible
+          ansible -i inventory.yml all -m ping -vvv
+
+      - name: Run Ansible Playbook
+        run: |
+          cd LOG8100_Projet/WebGoat-main/ansible
+          ansible-playbook -i inventory.yml site.yml -v --forks 10
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: false
+          IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/log8100_projet

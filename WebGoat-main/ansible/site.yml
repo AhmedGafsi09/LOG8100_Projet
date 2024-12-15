@@ -350,3 +350,65 @@
     - name: Display detailed logs
       debug:
         var: detailed_logs.stdout_lines
+
+    # Deployment of applications
+    - name: Remove control-plane taint
+      command: kubectl taint nodes aks-node-1 node-role.kubernetes.io/control-plane:NoSchedule-
+      ignore_errors: yes
+
+    # Deployment of WebGoat
+    - name: Deploy WebGoat
+      shell: |
+        kubectl create deployment webgoat --image={{ env.IMAGE_NAME }}:latest
+        kubectl expose deployment webgoat --port=8080 --type=NodePort
+      ignore_errors: yes
+
+    # Installation of Helm
+    - name: Install Helm
+      shell: |
+        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        chmod 700 get_helm.sh
+        ./get_helm.sh
+      ignore_errors: yes
+
+    # Monitoring configuration
+    - name: Create monitoring namespace
+      command: kubectl create namespace monitoring
+      ignore_errors: yes
+
+    # Deployment of Prometheus
+    - name: Setup Prometheus
+      shell: |
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        helm repo update
+        helm install prometheus prometheus-community/prometheus \
+          --namespace monitoring \
+          --set server.service.type=NodePort
+      ignore_errors: yes
+
+    # Deployment of Grafana
+    - name: Setup Grafana
+      shell: |
+        helm repo add grafana https://grafana.github.io/helm-charts
+        helm repo update
+        helm install grafana grafana/grafana \
+          --namespace monitoring \
+          --set service.type=NodePort \
+          --set adminPassword=admin
+      ignore_errors: yes
+
+    # Verification of deployments
+    - name: Verify deployments
+      shell: |
+        echo "=== WebGoat Service ==="
+        kubectl get svc webgoat
+        echo "=== Prometheus Service ==="
+        kubectl get svc -n monitoring prometheus-server
+        echo "=== Grafana Service ==="
+        kubectl get svc -n monitoring grafana
+      register: deployment_status
+      ignore_errors: yes
+
+    - name: Display deployment status
+      debug:
+        var: deployment_status.stdout_lines
