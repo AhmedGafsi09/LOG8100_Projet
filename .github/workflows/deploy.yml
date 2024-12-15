@@ -28,7 +28,7 @@ jobs:
       - name: Set up Kubernetes config
         env:
           CLIENT_CERT: ${{ secrets.KUBE_CLIENT_CERT }}
-          CLIENT_KEY: ${{ secrets.KUBE_CLIENT_KEY }}
+          CLIENT_KEY: ${{ secrets.KUBE_CLIENT_KEY }} 
         run: |
           mkdir -p $HOME/.kube
           echo '{
@@ -54,7 +54,8 @@ jobs:
               "name": "kubernetes-admin",
               "user": {
                 "client-certificate-data": "$CLIENT_CERT",
-                "client-key-data": "$CLIENT_KEY"
+                "client-key-data": "$CLIENT_KEY" | envsubst > $HOME/.kube/config
+                        chmod 600 $HOME/.kube/config
               }
             }]
           }' > $HOME/.kube/config
