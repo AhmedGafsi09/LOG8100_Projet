@@ -35,11 +35,13 @@ jobs:
           KUBECONFIG: ${{ secrets.KUBECONFIG }}
         run: |
           mkdir -p $HOME/.kube
-          echo "$KUBECONFIG" > $HOME/.kube/config
+          printf '%s' "$KUBECONFIG" > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
-
+          
+          # Debug (showing non-sensitive parts only)
+          kubectl config view --minify --flatten --output jsonpath='{.clusters[].cluster.server}'
+          
           # Validate kubeconfig
-          kubectl config view
           kubectl cluster-info
 
       - name: Test Ansible Connection
