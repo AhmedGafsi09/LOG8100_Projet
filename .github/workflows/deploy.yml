@@ -1,5 +1,4 @@
 name: Deployment
-
 on:
   push:
     branches: [main]
@@ -14,69 +13,79 @@ jobs:
           repository: 'AhmedGafsi09/LOG8100_Projet'
           path: 'LOG8100_Projet'
 
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_PRIVATE_KEY }}" > ~/.ssh/aks-node-1_key.pem
+          chmod 600 ~/.ssh/aks-node-1_key.pem
+          ssh-keyscan -H 20.63.16.243 >> ~/.ssh/known_hosts
+
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip kubectl
-          pip install --user ansible kubernetes
+          sudo apt-get install -y python3-pip
+          pip install --user ansible
 
-      - name: Set up Helm
-        uses: azure/setup-helm@v3
-        with:
-          version: 'v3.12.0'
-
-      - name: Set up Kubernetes config
+      - name: Reset Kubernetes on VM
         run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.AZURE_KUBECONFIG }}" > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
+          ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 'sudo kubeadm reset -f'
           
-          # Validate connection
+      - name: Copy Kubeadm Config to VM
+        run: |
+          cat > kubeadm-config.yaml << 'EOF'
+          apiVersion: kubeadm.k8s.io/v1beta3
+          kind: InitConfiguration
+          nodeRegistration:
+            criSocket: "unix:///var/run/containerd/containerd.sock"
+          ---
+          apiVersion: kubeadm.k8s.io/v1beta3
+          kind: ClusterConfiguration
+          apiServer:
+            certSANs:
+            - "20.63.16.243"
+            - "10.0.0.4"
+            - "10.96.0.1"
+            - "kubernetes"
+            - "kubernetes.default"
+            - "kubernetes.default.svc"
+          networking:
+            podSubnet: "192.168.0.0/16"
+            serviceSubnet: "10.96.0.0/12"
+          EOF
+          scp -i ~/.ssh/aks-node-1_key.pem kubeadm-config.yaml azureuser@20.63.16.243:~/
+
+      - name: Initialize Kubernetes with External IP
+        run: |
+          ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 '
+            sudo kubeadm init --config ~/kubeadm-config.yaml --upload-certs
+            mkdir -p ~/.kube
+            sudo cp /etc/kubernetes/admin.conf ~/.kube/config
+            sudo chown $(id -u):$(id -g) ~/.kube/config
+          '
+
+      - name: Get New Kubeconfig
+        run: |
+          scp -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243:~/.kube/config ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Verify Cluster Access
+        run: |
           kubectl cluster-info
           kubectl get nodes
 
-      - name: Create Namespaces
+      # Continue with the rest of your deployment steps
+      - name: Deploy CNI (Calico)
         run: |
-          kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/calico.yaml
 
-      - name: Deploy Applications
-        working-directory: LOG8100_Projet/WebGoat-main/kubernetes
+      - name: Wait for Calico to be ready
         run: |
-          kubectl apply -f webgoat-deployment.yml -n webgoat
-          kubectl apply -f webgoat-service.yml -n webgoat
-          kubectl apply -f service-monitor.yml -n webgoat
-          
-          # Wait for deployment
-          kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
+          kubectl wait --for=condition=ready pod -l k8s-app=calico-node -n kube-system --timeout=300s
 
-      - name: Deploy Monitoring Stack
-        working-directory: LOG8100_Projet/WebGoat-main/kubernetes
+      - name: Run Ansible Playbook
         run: |
-          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-          helm repo add grafana https://grafana.github.io/helm-charts
-          helm repo update
-
-          # Install Prometheus
-          helm upgrade --install prometheus prometheus-community/prometheus \
-            --namespace monitoring \
-            -f helm-values/prometheus-values.yaml \
-            --wait --timeout 10m
-
-          # Install Grafana
-          helm upgrade --install grafana grafana/grafana \
-            --namespace monitoring \
-            -f helm-values/grafana-values.yaml \
-            --wait --timeout 10m
-
-      - name: Verify Deployment
-        run: |
-          for ns in webgoat monitoring; do
-            echo "=== Namespace: $ns ==="
-            echo "Pods:"
-            kubectl get pods -n $ns
-            echo "Services:"
-            kubectl get svc -n $ns
-            echo "Deployments:"
-            kubectl get deployments -n $ns
-          done
+          cd LOG8100_Projet/WebGoat-main/ansible
+          ansible-playbook -i inventory.yml site.yml -v --forks 10
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: false
+          IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/log8100_projet
