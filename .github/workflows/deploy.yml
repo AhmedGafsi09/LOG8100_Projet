@@ -25,6 +25,12 @@ jobs:
           sudo apt-get install -y python3-pip
           pip install --user ansible
 
+      - name: Set up Kubernetes config
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
       - name: Test Ansible Connection
         run: |
           cd LOG8100_Projet/WebGoat-main/ansible
@@ -37,3 +43,29 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: false
           IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/log8100_projet
+
+      - name: Deploy CNI (Calico)
+        run: |
+          kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/tigera-operator.yaml
+          kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/custom-resources.yaml
+
+      - name: Deploy Applications
+        run: |
+          kubectl create deployment webgoat --image=${{ secrets.DOCKER_USERNAME }}/log8100_projet:latest
+          kubectl expose deployment webgoat --port=8080 --type=NodePort
+
+      - name: Deploy Monitoring Stack
+        run: |
+          kubectl create namespace monitoring
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo update
+
+          helm install prometheus prometheus-community/prometheus \
+            --namespace monitoring \
+            --set server.service.type=NodePort
+
+          helm install grafana grafana/grafana \
+            --namespace monitoring \
+            --set service.type=NodePort \
+            --set adminPassword=admin
