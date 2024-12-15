@@ -26,14 +26,19 @@ jobs:
           pip install --user ansible
 
       - name: Set up Kubernetes config
+        env:
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
         run: |
-            mkdir -p $HOME/.kube
-            # First decode and write config
-            echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
-            chmod 600 $HOME/.kube/config
-            # Verify the config content
-            cat $HOME/.kube/config | sed 's/certificate-data:.*/certificate-data: REDACTED/g'
-
+          mkdir -p $HOME/.kube
+          echo "${KUBECONFIG_DATA}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          # Verify the certificates are present
+          if ! grep -q "client-certificate-data:" $HOME/.kube/config || \
+            ! grep -q "client-key-data:" $HOME/.kube/config; then
+            echo "Error: Missing required certificate data"
+            cat $HOME/.kube/config
+            exit 1
+          fi
             
       - name: Verify Kubernetes Configuration
         run: |
