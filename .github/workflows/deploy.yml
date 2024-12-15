@@ -30,6 +30,15 @@ jobs:
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
+          # Add this to verify the configuration
+          kubectl config view
+          # Test authentication
+          kubectl auth can-i --list
+
+      - name: Test Kubernetes Connection
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
 
       - name: Test Ansible Connection
         run: |
