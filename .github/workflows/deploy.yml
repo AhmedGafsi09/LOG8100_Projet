@@ -30,28 +30,32 @@ jobs:
       - name: Set up Kubernetes config
         run: |
           mkdir -p $HOME/.kube
-          echo "Creating kubeconfig..."
-          cat <<EOF > $HOME/.kube/config
-apiVersion: v1
-clusters:
-- cluster:
-    insecure-skip-tls-verify: true
-    server: https://localhost:6443
-  name: kubernetes
-contexts:
-- context:
-    cluster: kubernetes
-    user: kubernetes-admin
-  name: kubernetes-admin@kubernetes
-current-context: kubernetes-admin@kubernetes
-kind: Config
-preferences: {}
-users:
-- name: kubernetes-admin
-  user:
-    token: PLACEHOLDER_FOR_TOKEN
-EOF
-          chmod 600 $HOME/.kube/config
+          echo "{" > $HOME/.kube/config
+          echo "  \"apiVersion\": \"v1\"," >> $HOME/.kube/config
+          echo "  \"clusters\": [{" >> $HOME/.kube/config
+          echo "    \"cluster\": {" >> $HOME/.kube/config
+          echo "      \"insecure-skip-tls-verify\": true," >> $HOME/.kube/config
+          echo "      \"server\": \"https://localhost:6443\"" >> $HOME/.kube/config
+          echo "    }," >> $HOME/.kube/config
+          echo "    \"name\": \"kubernetes\"" >> $HOME/.kube/config
+          echo "  }]," >> $HOME/.kube/config
+          echo "  \"contexts\": [{" >> $HOME/.kube/config
+          echo "    \"context\": {" >> $HOME/.kube/config
+          echo "      \"cluster\": \"kubernetes\"," >> $HOME/.kube/config
+          echo "      \"user\": \"kubernetes-admin\"" >> $HOME/.kube/config
+          echo "    }," >> $HOME/.kube/config
+          echo "    \"name\": \"kubernetes-admin@kubernetes\"" >> $HOME/.kube/config
+          echo "  }]," >> $HOME/.kube/config
+          echo "  \"current-context\": \"kubernetes-admin@kubernetes\"," >> $HOME/.kube/config
+          echo "  \"kind\": \"Config\"," >> $HOME/.kube/config
+          echo "  \"preferences\": {}," >> $HOME/.kube/config
+          echo "  \"users\": [{" >> $HOME/.kube/config
+          echo "    \"name\": \"kubernetes-admin\"," >> $HOME/.kube/config
+          echo "    \"user\": {" >> $HOME/.kube/config
+          echo "      \"token\": \"PLACEHOLDER_FOR_TOKEN\"" >> $HOME/.kube/config
+          echo "    }" >> $HOME/.kube/config
+          echo "  }]" >> $HOME/.kube/config
+          echo "}" >> $HOME/.kube/config
 
       - name: Verify Kubernetes Config File
         run: |
