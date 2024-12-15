@@ -25,11 +25,10 @@ jobs:
           sudo apt-get install -y python3-pip
           pip install --user ansible
 
-      - name: Set up Kubernetes config
-        run: |
+          - name: Set up Kubernetes config
+          run: |
             mkdir -p $HOME/.kube
-            # Write raw config directly, skip base64
-            cat > $HOME/.kube/config << 'EOL'
+            cat > $HOME/.kube/config << EOF
             apiVersion: v1
             clusters:
             - cluster:
@@ -47,10 +46,12 @@ jobs:
             users:
             - name: kubernetes-admin
               user:
-                client-certificate-data: ${CLIENT_CERT}
-                client-key-data: ${CLIENT_KEY}
-            EOL
+                client-certificate-data: "$CLIENT_CERT"
+                client-key-data: "$CLIENT_KEY"
+            EOF
             chmod 600 $HOME/.kube/config
+            # Verify config structure
+            kubectl config view
         env:
           CLIENT_CERT: ${{ secrets.KUBE_CLIENT_CERT }}
           CLIENT_KEY: ${{ secrets.KUBE_CLIENT_KEY }}
