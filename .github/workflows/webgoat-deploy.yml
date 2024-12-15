@@ -2,88 +2,51 @@ name: Deploy WebGoat
 on:
   workflow_call:
   workflow_dispatch:
-
 jobs:
   deploy-webgoat:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
-
-      - name: Set up KUBECONFIG
+      
+      - name: Prepare KUBECONFIG
         run: |
+          echo "Creating .kube directory"
           mkdir -p ~/.kube
+          
+          echo "Checking if KUBECONFIG_CONTENT secret exists"
+          if [ -z "${{ secrets.KUBECONFIG_CONTENT }}" ]; then
+            echo "Error: KUBECONFIG_CONTENT secret is not set"
+            exit 1
+          fi
+          
+          echo "Decoding and writing kubeconfig"
           echo "${{ secrets.KUBECONFIG_CONTENT }}" | base64 -d > ~/.kube/config
+          
+          echo "Verifying kubeconfig file"
+          if [ ! -f ~/.kube/config ]; then
+            echo "Error: Kubeconfig file was not created successfully"
+            exit 1
+          fi
+          
           chmod 600 ~/.kube/config
+          ls -l ~/.kube/config
+        
         env:
           KUBECONFIG: ~/.kube/config
       
-      - name: Debug KUBECONFIG
+      - name: Debug KUBECONFIG Contents
         run: |
-          echo "Checking kubeconfig contents:"
+          echo "Kubeconfig file contents:"
           cat ~/.kube/config || echo "Failed to read kubeconfig"
+      
+      - name: Set KUBECONFIG Environment
+        run: |
+          export KUBECONFIG=~/.kube/config
+          echo "KUBECONFIG path: $KUBECONFIG"
       
       - name: Verify Cluster Connection
         run: |
-          kubectl --kubeconfig=~/.kube/config cluster-info
-          kubectl --kubeconfig=~/.kube/config get nodes
-
-      - name: Deploy WebGoat
-        run: |
-          kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
-          cat << EOF | kubectl apply -f -
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: webgoat
-            namespace: webgoat
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
-                app: webgoat
-            template:
-              metadata:
-                labels:
-                  app: webgoat
-              spec:
-                containers:
-                - name: webgoat
-                  image: webgoat/webgoat:latest
-                  ports:
-                  - containerPort: 8080
-                  resources:
-                    limits:
-                      memory: "1Gi"
-                      cpu: "500m"
-                    requests:
-                      memory: "512Mi"
-                      cpu: "250m"
-          EOF
-
-          cat << EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: webgoat
-            namespace: webgoat
-          spec:
-            type: NodePort
-            selector:
-              app: webgoat
-            ports:
-            - port: 8080
-              targetPort: 8080
-              nodePort: 30080
-          EOF
-
-      - name: Wait for Deployment
-        run: |
-          kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
-
-      - name: Verify Deployment
-        run: |
-          kubectl get deployments -n webgoat
-          kubectl get pods -n webgoat -o wide
-          kubectl get svc -n webgoat
-          echo "WebGoat is accessible at: http://<Your_Node_IP>:30080/WebGoat"
+          kubectl config view
+          kubectl cluster-info
+          kubectl get nodes
