@@ -57,16 +57,18 @@ jobs:
       - name: Initialize Kubernetes with External IP
         run: |
           ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 '
-            sudo kubeadm init --config ~/kubeadm-config.yaml --upload-certs
-            mkdir -p ~/.kube
-            sudo cp /etc/kubernetes/admin.conf ~/.kube/config
-            sudo chown $(id -u):$(id -g) ~/.kube/config
+            sudo kubeadm init --config ~/kubeadm-config.yaml --upload-certs &&
+            mkdir -p $HOME/.kube &&
+            sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config &&
+            sudo chown $(id -u):$(id -g) $HOME/.kube/config &&
+            echo "Kubeconfig copied and permissions set"
           '
 
       - name: Get New Kubeconfig
         run: |
-          scp -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243:~/.kube/config ~/.kube/config
-          chmod 600 ~/.kube/config
+          mkdir -p $HOME/.kube
+          scp -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243:.kube/config $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
 
       - name: Verify Cluster Access
         run: |
