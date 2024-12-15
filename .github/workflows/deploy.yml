@@ -28,14 +28,16 @@ jobs:
       - name: Set up Kubernetes config
         run: |
             mkdir -p $HOME/.kube
+            # First decode and write config
             echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
             chmod 600 $HOME/.kube/config
-            cat $HOME/.kube/config
+            # Verify the config content
+            cat $HOME/.kube/config | sed 's/certificate-data:.*/certificate-data: REDACTED/g'
 
             
       - name: Verify Kubernetes Configuration
         run: |
-            kubectl config view --raw
+            kubectl config current-context
             kubectl cluster-info
 
       - name: Test Ansible Connection
