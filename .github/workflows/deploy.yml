@@ -30,7 +30,7 @@ jobs:
           KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
         run: |
           mkdir -p $HOME/.kube
-          echo "${KUBECONFIG_DATA}" | base64 -d > $HOME/.kube/config
+          echo "${KUBECONFIG_DATA}" > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
           # Verify the certificates are present
           if ! grep -q "client-certificate-data:" $HOME/.kube/config || \
