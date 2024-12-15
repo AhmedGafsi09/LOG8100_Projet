@@ -10,21 +10,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up SSH and kubeconfig
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.VM_PRIVATE_KEY }}
+      - name: Set up SSH key
         run: |
-          mkdir -p $HOME/.ssh
-          echo "$SSH_PRIVATE_KEY" > $HOME/.ssh/aks-node-1_key.pem
-          chmod 600 $HOME/.ssh/aks-node-1_key.pem
-          ssh-keyscan -H 20.63.16.243 >> $HOME/.ssh/known_hosts
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_PRIVATE_KEY }}" > ~/.ssh/aks-node-1_key.pem
+          chmod 600 ~/.ssh/aks-node-1_key.pem
+          ssh-keyscan -H 20.63.16.243 >> ~/.ssh/known_hosts
 
-          # Test SSH connection
-          ssh -i $HOME/.ssh/aks-node-1_key.pem -o StrictHostKeyChecking=no azureuser@20.63.16.243 'echo "SSH connection successful"'
-
-          # Get kubeconfig
+      - name: Get Kubeconfig
+        run: |
           mkdir -p $HOME/.kube
-          scp -i $HOME/.ssh/aks-node-1_key.pem azureuser@20.63.16.243:.kube/config $HOME/.kube/config
+          scp -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243:.kube/config $HOME/.kube/config
           chmod 600 $HOME/.kube/config
 
       - name: Verify cluster connection
