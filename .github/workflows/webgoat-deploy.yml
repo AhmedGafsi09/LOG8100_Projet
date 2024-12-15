@@ -10,15 +10,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Get Kubeconfig
+      - name: Set up SSH key
         run: |
-          # Recréer la configuration SSH
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_PRIVATE_KEY }}" > ~/.ssh/aks-node-1_key.pem
           chmod 600 ~/.ssh/aks-node-1_key.pem
           ssh-keyscan -H 20.63.16.243 >> ~/.ssh/known_hosts
-          
-          # Créer le répertoire kube et copier la config
+
+      - name: Get Kubeconfig
+        run: |
+          # Create kube directory and copy kubeconfig from remote server
           mkdir -p $HOME/.kube
           ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 'cat ~/.kube/config' > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
