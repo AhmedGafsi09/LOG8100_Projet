@@ -20,9 +20,9 @@ jobs:
       - name: Get Kubeconfig
         run: |
           # Create kube directory and copy kubeconfig from remote server
-          mkdir -p $HOME/.kube
-          ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 'cat ~/.kube/config' > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
+         # mkdir -p $HOME/.kube
+         # ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 'cat ~/.kube/config' > $HOME/.kube/config
+         # chmod 600 $HOME/.kube/config
 
       - name: Verify cluster connection
         run: |
