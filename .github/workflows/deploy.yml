@@ -31,76 +31,36 @@ jobs:
           CLIENT_KEY: ${{ secrets.CLIENT_KEY }}
         run: |
           mkdir -p $HOME/.kube
-          printf '%s\n' \
-            "apiVersion: v1" \
-            "clusters:" \
-            "- cluster:" \
-            "    insecure-skip-tls-verify: true" \
-            "    server: https://20.63.16.243:6443" \
-            "  name: kubernetes" \
-            "contexts:" \
-            "- context:" \
-            "    cluster: kubernetes" \
-            "    user: kubernetes-admin" \
-            "  name: kubernetes-admin@kubernetes" \
-            "current-context: kubernetes-admin@kubernetes" \
-            "kind: Config" \
-            "preferences: {}" \
-            "users:" \
-            "- name: kubernetes-admin" \
-            "  user:" \
-            "    client-certificate-data: \"$CLIENT_CERT\"" \
-            "    client-key-data: \"$CLIENT_KEY\"" > $HOME/.kube/config
+          echo '{
+            "apiVersion": "v1",
+            "clusters": [{
+              "cluster": {
+                "insecure-skip-tls-verify": true,
+                "server": "https://20.63.16.243:6443"
+              },
+              "name": "kubernetes"
+            }],
+            "contexts": [{
+              "context": {
+                "cluster": "kubernetes",
+                "user": "kubernetes-admin"
+              },
+              "name": "kubernetes-admin@kubernetes"
+            }],
+            "current-context": "kubernetes-admin@kubernetes",
+            "kind": "Config",
+            "preferences": {},
+            "users": [{
+              "name": "kubernetes-admin",
+              "user": {
+                "client-certificate-data": "$CLIENT_CERT",
+                "client-key-data": "$CLIENT_KEY"
+              }
+            }]
+          }' > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
-
 
       - name: Verify cluster access
         run: |
           kubectl config view --raw
           kubectl cluster-info
-
-      - name: Test Ansible Connection
-        run: |
-          cd LOG8100_Projet/WebGoat-main/ansible
-          ansible -i inventory.yml all -m ping -vvv
-
-      - name: Run Ansible Playbook
-        run: |
-          cd LOG8100_Projet/WebGoat-main/ansible
-          ansible-playbook -i inventory.yml site.yml -v --forks 10
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: false
-          IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/log8100_projet
-
-      - name: Check Kubernetes cluster
-        run: |
-          kubectl cluster-info
-          kubectl get nodes
-
-      - name: Deploy CNI (Calico)
-        run: |
-          curl -LO https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/tigera-operator.yaml
-          curl -LO https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/custom-resources.yaml
-          kubectl apply -f tigera-operator.yaml
-          kubectl apply -f custom-resources.yaml
-
-      - name: Deploy Applications
-        run: |
-          kubectl create deployment webgoat --image=${{ secrets.DOCKER_USERNAME }}/log8100_projet:latest
-          kubectl expose deployment webgoat --port=8080 --type=NodePort
-
-      - name: Deploy Monitoring Stack
-        run: |
-          kubectl create namespace monitoring
-          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-          helm repo add grafana https://grafana.github.io/helm-charts
-          helm repo update
-
-          helm install prometheus prometheus-community/prometheus \
-            --namespace monitoring \
-            --set server.service.type=NodePort
-
-          helm install grafana grafana/grafana \
-            --namespace monitoring \
-            --set service.type=NodePort \
-            --set adminPassword=admin
