@@ -1,0 +1,107 @@
+name: Deploy WebGoat
+on:
+  workflow_call:  # This allows the workflow to be called by other workflows
+  workflow_dispatch:  # This allows manual triggering
+
+jobs:
+  deploy-webgoat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          repository: 'AhmedGafsi09/LOG8100_Projet'
+          path: 'LOG8100_Projet'
+
+      - name: Set up Kubernetes config
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          # Update server address to use external IP
+          sed -i "s/10.0.0.4/20.63.16.243/" $HOME/.kube/config
+
+      - name: Verify cluster access
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Deploy WebGoat
+        run: |
+          # Create namespace if it doesn't exist
+          kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
+
+          # Create deployment
+          cat << EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: webgoat
+            namespace: webgoat
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: webgoat
+            template:
+              metadata:
+                labels:
+                  app: webgoat
+              spec:
+                containers:
+                - name: webgoat
+                  image: ${{ secrets.DOCKER_USERNAME }}/log8100_projet:latest
+                  imagePullPolicy: Always
+                  ports:
+                  - containerPort: 8080
+                  resources:
+                    limits:
+                      memory: "1Gi"
+                      cpu: "500m"
+                    requests:
+                      memory: "512Mi"
+                      cpu: "250m"
+                  readinessProbe:
+                    httpGet:
+                      path: /WebGoat
+                      port: 8080
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+          EOF
+
+          # Create service
+          cat << EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: webgoat
+            namespace: webgoat
+          spec:
+            type: NodePort
+            selector:
+              app: webgoat
+            ports:
+            - port: 8080
+              targetPort: 8080
+              nodePort: 30080
+              name: http
+          EOF
+
+      - name: Wait for deployment
+        run: |
+          echo "Waiting for deployment to be ready..."
+          kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
+
+      - name: Verify deployment
+        run: |
+          echo "Deployment Status:"
+          kubectl get deployment -n webgoat
+          
+          echo "Pod Status:"
+          kubectl get pods -n webgoat
+          
+          echo "Service Status:"
+          kubectl get svc -n webgoat
+          
+          echo "Application will be available at:"
+          echo "http://20.63.16.243:30080/WebGoat"
