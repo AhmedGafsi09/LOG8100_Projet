@@ -7,37 +7,32 @@ jobs:
   deploy-webgoat:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Debugging SSH Setup
+      - name: Set up SSH Key
         run: |
-          echo "Generating SSH key for debugging"
-          ssh-keygen -t rsa -b 4096 -f ~/.ssh/debug_key -N ''
-          cat ~/.ssh/debug_key.pub
-          echo "Contents of secret SSH key:"
+          mkdir -p ~/.ssh
           echo "${{ secrets.VM_PRIVATE_KEY }}" | base64 -d > ~/.ssh/aks-node-1_key.pem
           chmod 600 ~/.ssh/aks-node-1_key.pem
-          cat ~/.ssh/aks-node-1_key.pem
-
-      - name: Verify SSH Connection
-        run: |
           ssh-keyscan -H 20.63.16.243 >> ~/.ssh/known_hosts
-          ssh -vvv -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 'whoami'
 
-      - name: Get Kubeconfig
+      - name: Fetch Kubeconfig
         run: |
-          mkdir -p $HOME/.kube
-          ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 'cat ~/.kube/config' > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
+          ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 'cat ~/.kube/config' > $HOME/kubeconfig
+          chmod 600 $HOME/kubeconfig
+        env:
+          KUBECONFIG: $HOME/kubeconfig
 
       - name: Verify Cluster Connection
         run: |
+          export KUBECONFIG=$HOME/kubeconfig
           kubectl cluster-info
           kubectl get nodes
 
       - name: Deploy WebGoat
         run: |
+          export KUBECONFIG=$HOME/kubeconfig
           kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
           cat << EOF | kubectl apply -f -
           apiVersion: apps/v1
@@ -86,10 +81,13 @@ jobs:
           EOF
 
       - name: Wait for Deployment
-        run: kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
+        run: |
+          export KUBECONFIG=$HOME/kubeconfig
+          kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
 
       - name: Verify Deployment
         run: |
+          export KUBECONFIG=$HOME/kubeconfig
           kubectl get deployments -n webgoat
           kubectl get pods -n webgoat -o wide
           kubectl get svc -n webgoat
