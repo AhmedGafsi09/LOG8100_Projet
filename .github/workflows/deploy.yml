@@ -37,10 +37,12 @@ jobs:
           mkdir -p $HOME/.kube
           echo "$KUBECONFIG" > $HOME/.kube/config
           
-          kubectl config view --raw --minify --flatten --output=jsonpath='{.clusters[].cluster.server}'
+          echo "${{ secrets.AZURE_KUBECONFIG }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
           
-          # Validate kubeconfig
+          # Validate connection
           kubectl cluster-info
+          kubectl get nodes
 
       - name: Test Ansible Connection
         run: |
