@@ -1,9 +1,7 @@
 name: Deploy WebGoat
-
 on:
   workflow_call:
   workflow_dispatch:
-
 jobs:
   deploy-webgoat:
     runs-on: ubuntu-latest
@@ -16,6 +14,9 @@ jobs:
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG_CONTENT }}" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
+          # Ajout d'une vérification
+          kubectl config view
+          kubectl cluster-info
 
       - name: Deploy WebGoat
         run: |
