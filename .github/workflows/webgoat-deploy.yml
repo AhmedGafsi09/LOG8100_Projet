@@ -20,6 +20,18 @@ jobs:
           chmod 600 ~/.ssh/aks-node-1_key.pem
           ssh-keyscan -H 20.63.16.243 >> ~/.ssh/known_hosts
 
+      - name: Set Kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+        env:
+          KUBECONFIG: ~/.kube/config
+
+      - name: Validate Cluster Connection
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
 
       - name: Deploy WebGoat
         run: |
