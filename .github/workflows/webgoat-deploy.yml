@@ -20,18 +20,6 @@ jobs:
           chmod 600 ~/.ssh/aks-node-1_key.pem
           ssh-keyscan -H 20.63.16.243 >> ~/.ssh/known_hosts
 
-      - name: Get Kubernetes config from VM
-        run: |
-          mkdir -p $HOME/.kube
-          scp -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243:.kube/config $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
-          # Double-check the server address is using external IP
-          sed -i "s/10.0.0.4/20.63.16.243/" $HOME/.kube/config
-
-      - name: Verify cluster access
-        run: |
-          kubectl cluster-info
-          kubectl get nodes
 
       - name: Deploy WebGoat
         run: |
