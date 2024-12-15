@@ -25,12 +25,12 @@ jobs:
           sudo apt-get install -y python3-pip
           pip install --user ansible
 
-      - name: Set up Kubernetes config using private key
+      - name: Set up Kubernetes config with SSH key and username
         env:
           VM_PRIVATE_KEY: ${{ secrets.VM_PRIVATE_KEY }}
         run: |
           mkdir -p $HOME/.kube
-          echo "Creating kubeconfig with private key..."
+          echo "Creating kubeconfig with SSH key and username..."
           echo "{" > $HOME/.kube/config
           echo "  \"apiVersion\": \"v1\"," >> $HOME/.kube/config
           echo "  \"clusters\": [{" >> $HOME/.kube/config
@@ -43,17 +43,21 @@ jobs:
           echo "  \"contexts\": [{" >> $HOME/.kube/config
           echo "    \"context\": {" >> $HOME/.kube/config
           echo "      \"cluster\": \"kubernetes\"," >> $HOME/.kube/config
-          echo "      \"user\": \"kubernetes-admin\"" >> $HOME/.kube/config
+          echo "      \"user\": \"azureuser\"" >> $HOME/.kube/config
           echo "    }," >> $HOME/.kube/config
-          echo "    \"name\": \"kubernetes-admin@kubernetes\"" >> $HOME/.kube/config
+          echo "    \"name\": \"azureuser@kubernetes\"" >> $HOME/.kube/config
           echo "  }]," >> $HOME/.kube/config
-          echo "  \"current-context\": \"kubernetes-admin@kubernetes\"," >> $HOME/.kube/config
+          echo "  \"current-context\": \"azureuser@kubernetes\"," >> $HOME/.kube/config
           echo "  \"kind\": \"Config\"," >> $HOME/.kube/config
           echo "  \"preferences\": {}," >> $HOME/.kube/config
           echo "  \"users\": [{" >> $HOME/.kube/config
-          echo "    \"name\": \"kubernetes-admin\"," >> $HOME/.kube/config
+          echo "    \"name\": \"azureuser\"," >> $HOME/.kube/config
           echo "    \"user\": {" >> $HOME/.kube/config
-          echo "      \"client-key-data\": \"$(cat ~/.ssh/aks-node-1_key.pem | base64 | tr -d '\n')\"" >> $HOME/.kube/config
+          echo "      \"auth-provider\": {" >> $HOME/.kube/config
+          echo "        \"config\": {" >> $HOME/.kube/config
+          echo "          \"client-key-data\": \"$(cat ~/.ssh/aks-node-1_key.pem | base64 | tr -d '\n')\"" >> $HOME/.kube/config
+          echo "        }" >> $HOME/.kube/config
+          echo "      }" >> $HOME/.kube/config
           echo "    }" >> $HOME/.kube/config
           echo "  }]" >> $HOME/.kube/config
           echo "}" >> $HOME/.kube/config
