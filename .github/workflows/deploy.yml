@@ -27,18 +27,14 @@ jobs:
 
       - name: Set up Kubernetes config
         run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
-          # Add this to verify the configuration
-          kubectl config view
-          # Test authentication
-          kubectl auth can-i --list
-
-      - name: Test Kubernetes Connection
+            mkdir -p $HOME/.kube
+            echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+            chmod 600 $HOME/.kube/config
+            
+      - name: Verify Kubernetes Configuration
         run: |
-          kubectl cluster-info
-          kubectl get nodes
+            kubectl config view --raw
+            kubectl cluster-info
 
       - name: Test Ansible Connection
         run: |
