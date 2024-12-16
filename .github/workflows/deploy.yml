@@ -1,129 +1,101 @@
-name: Deployment
+name: Deploy to Azure VM
+
 on:
   push:
-    branches: [main]
+    branches: [ main ]
+    paths:
+      - 'WebGoat-main/**'
+      - 'terraform/**'
+      - 'ansible/**'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: production
+    
     steps:
       - uses: actions/checkout@v3
+
+      - name: Set up Azure CLI
+        uses: azure/login@v1
         with:
-          repository: 'AhmedGafsi09/LOG8100_Projet'
-          path: 'LOG8100_Projet'
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.VM_PRIVATE_KEY }}" > ~/.ssh/aks-node-1_key.pem
-          chmod 600 ~/.ssh/aks-node-1_key.pem
-          ssh-keyscan -H 20.63.16.243 >> ~/.ssh/known_hosts
+          echo "${{ secrets.VM_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
 
       - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-pip
-          pip install --user ansible
+          pip install ansible
+          pip install openshift
 
-      - name: Reset Kubernetes on VM
-        run: |
-          ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 'sudo kubeadm reset -f'
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: "1.5.7"
 
-      - name: Copy Kubeadm Config to VM
+      - name: Initialize Terraform
         run: |
-          cat > kubeadm-config.yaml << 'EOF'
-          apiVersion: kubeadm.k8s.io/v1beta3
-          kind: InitConfiguration
-          nodeRegistration:
-            criSocket: "unix:///var/run/containerd/containerd.sock"
-          ---
-          apiVersion: kubeadm.k8s.io/v1beta3
-          kind: ClusterConfiguration
-          apiServer:
-            certSANs:
-            - "20.63.16.243"
-            - "10.0.0.4"
-            - "10.96.0.1"
-            - "kubernetes"
-            - "kubernetes.default"
-            - "kubernetes.default.svc"
-          networking:
-            podSubnet: "192.168.0.0/16"
-            serviceSubnet: "10.96.0.0/12"
-          EOF
-          scp -i ~/.ssh/aks-node-1_key.pem kubeadm-config.yaml azureuser@20.63.16.243:~/
+          cd terraform
+          terraform init
+          terraform validate
 
-      - name: Initialize Kubernetes with External IP
+      - name: Terraform Plan
         run: |
-          ssh -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243 '
-            sudo kubeadm init --config ~/kubeadm-config.yaml --upload-certs &&
-            mkdir -p $HOME/.kube &&
-            sudo cp -f /etc/kubernetes/admin.conf $HOME/.kube/config &&
-            sudo chown $(id -u):$(id -g) $HOME/.kube/config &&
-            sudo sed -i "s/10.0.0.4/20.63.16.243/" $HOME/.kube/config &&
-            kubectl config view | grep server &&
-            kubectl get nodes
-          '
+          cd terraform
+          terraform plan -out=tfplan
+        env:
+          TF_VAR_vm_ip: ${{ secrets.VM_HOST }}
 
-      - name: Get New Kubeconfig
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main'
         run: |
-          mkdir -p $HOME/.kube
-          scp -i ~/.ssh/aks-node-1_key.pem azureuser@20.63.16.243:.kube/config $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
+          cd terraform
+          terraform apply tfplan
 
-      - name: Update Local Kubeconfig
+      - name: Setup Kubernetes
         run: |
-          sed -i "s/10.0.0.4/20.63.16.243/" $HOME/.kube/config
-          kubectl config view | grep server
-          kubectl cluster-info
-
-      - name: Wait for Node Ready
-        run: |
-          for i in {1..30}; do
-            if kubectl get nodes | grep -q "Ready"; then
-              echo "Node is Ready"
-              break
-            fi
-            echo "Waiting for node to be ready... ($i/30)"
-            sleep 10
-          done
-
-      - name: Deploy and Wait for Calico
-        run: |
-          kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/calico.yaml
-          for i in {1..30}; do
-            if kubectl get pods -n kube-system -l k8s-app=calico-node 2>/dev/null | grep -q "calico-node"; then
-              echo "Calico pods found, waiting for them to be ready..."
-              break
-            fi
-            echo "Attempt $i/30: Waiting for Calico pods to be created..."
-            sleep 10
-          done
-          for i in {1..30}; do
-            if kubectl get pods -n kube-system -l k8s-app=calico-node | grep -q "Running"; then
-              echo "Calico pods are running!"
-              kubectl get pods -n kube-system -l k8s-app=calico-node
-              break
-            fi
-            echo "Attempt $i/30: Waiting for Calico pods to be ready..."
-            sleep 10
-          done
-          kubectl get nodes -o wide
-          kubectl get pods -n kube-system | grep calico
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
 
       - name: Run Ansible Playbook
         run: |
-          cd LOG8100_Projet/WebGoat-main/ansible
-          ansible-playbook -i inventory.yml site.yml -v --forks 10
+          cd ansible
+          ansible-playbook -i inventory.yml site.yml --extra-vars "host=${{ secrets.VM_HOST }}"
         env:
-          ANSIBLE_HOST_KEY_CHECKING: false
-          IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/log8100_projet
+          ANSIBLE_HOST_KEY_CHECKING: "false"
 
-  deploy-webgoat:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy WebGoat Application
+      - name: Verify Deployment
         run: |
-          kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
-          kubectl apply -f k8s/webgoat.yaml -n webgoat
+          kubectl get nodes
+          kubectl get pods -n webgoat
+          kubectl get services -n webgoat
+
+      - name: Run Security Checks
+        run: |
+          kubectl apply -f https://raw.githubusercontent.com/aquasecurity/kube-bench/main/job.yaml
+          kubectl wait --for=condition=complete job/kube-bench --timeout=300s
+          kubectl logs job/kube-bench
+
+      - name: Notify on Success
+        if: success()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_MESSAGE: 'Deployment successful! 🚀'
+
+      - name: Notify on Failure
+        if: failure()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_MESSAGE: 'Deployment failed! 🔥'
