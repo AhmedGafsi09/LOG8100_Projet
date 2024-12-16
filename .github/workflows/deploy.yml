@@ -37,7 +37,7 @@ jobs:
 
       - name: Apply Network Policies
         run: |
-          kubectl apply -f ./kubernetes/calico/calico-config.yaml
+          kubectl apply -f ./WebGoat-main/kubernetes/calico/calico-config.yaml
           sleep 30  # Wait for policies to be applied
 
       - name: Deploy Application
