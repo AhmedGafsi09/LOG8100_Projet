@@ -2,47 +2,81 @@ name: Deploy WebGoat
 on:
   workflow_call:
   workflow_dispatch:
+
 jobs:
-  deploy-webgoat:
+  security-scan:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run Kubesec scan
+        uses: controlplaneio/kubesec-action@master
+        with:
+          input: kubernetes/*.yaml
+          format: json
+          output: kubesec-results.json
+
+      - name: Scan Kubernetes manifests
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          hide-progress: false
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+  deploy-webgoat:
+    needs: security-scan
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Setup Kubernetes config
         run: |
           mkdir -p ~/.kube
-          cat > ~/.kube/config << EOF
-          apiVersion: v1
-          clusters:
-          - cluster:
-              certificate-authority-data: ${{ secrets.KUBE_CA_DATA }}
-              server: https://20.63.16.243:6443
-            name: kubernetes
-          contexts:
-          - context:
-              cluster: kubernetes
-              user: kubernetes-admin
-            name: kubernetes-admin@kubernetes
-          current-context: kubernetes-admin@kubernetes
-          kind: Config
-          users:
-          - name: kubernetes-admin
-            user:
-              client-certificate-data: ${{ secrets.KUBE_CERT_DATA }}
-              client-key-data: ${{ secrets.KUBE_KEY_DATA }}
-          EOF
+          echo "${{ secrets.KUBECONFIG_CONTENT }}" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
 
-      - name: Verify Kubernetes Configuration
+      - name: Verify cluster access
         run: |
-          kubectl config view
           kubectl cluster-info
           kubectl get nodes
-          echo "Testing API server connection..."
-          curl -k https://20.63.16.243:6443/version
+
+      - name: Create namespace
+        run: |
+          kubectl create namespace webgoat --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply security policies
+        run: |
+          kubectl apply -f kubernetes/network-policies.yaml
+          kubectl apply -f kubernetes/resource-quota.yaml
+          kubectl wait --for=condition=Ready namespace/webgoat
 
       - name: Deploy WebGoat
         run: |
-          kubectl create namespace webgoat --dry-run=client -o yaml --validate=false | kubectl apply -f -
-          kubectl apply -f k8s/webgoat.yaml -n webgoat --validate=false
+          kubectl apply -f kubernetes/webgoat.yaml -n webgoat
+          kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -n webgoat
+          kubectl get services -n webgoat
+
+      - name: Security post-deployment check
+        run: |
+          kubectl auth can-i --list -n webgoat
+          kubectl get networkpolicies -n webgoat
+          kubectl get podsecuritypolicies -n webgoat
+
+      - name: Monitor deployment
+        run: |
+          READY=$(kubectl get pods -n webgoat -l app=webgoat -o jsonpath='{.items[0].status.containerStatuses[0].ready}')
+          if [ "$READY" != "true" ]; then
+            kubectl logs -n webgoat -l app=webgoat
+            exit 1
+          fi
