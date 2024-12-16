@@ -1,55 +1,81 @@
 name: Code Analysis
 
 on:
-  workflow_run:
-    workflows: ["Container Security Scan"]
-    types:
-      - completed
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'WebGoat-main/**'
+      - '.github/workflows/code-analysis.yml'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-  code-analysis:
-    name: SonarQube Code Analysis
+  analyze:
     runs-on: ubuntu-latest
-    needs: container-scan
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
-      - name: Set up Java 21
+      - name: Set up Java
         uses: actions/setup-java@v3
         with:
-          java-version: 21
           distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
 
-      - name: Compile Java code with Maven
-        run: |
-          mvn -f WebGoat-main/pom.xml clean compile
-
-      - name: Run SonarQube Scan
-        uses: sonarsource/sonarqube-scan-action@master
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      - name: Cache SonarCloud packages
+        uses: actions/cache@v3
         with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Build and analyze
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+          -Dsonar.projectKey=WebGoat \
+          -Dsonar.organization=your-org \
+          -Dsonar.host.url=https://sonarcloud.io
+
+      - name: Run OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'WebGoat'
+          path: 'WebGoat-main'
+          format: 'HTML'
           args: >
-            -Dsonar.projectKey=WebGoat
-            -Dsonar.projectName=WebGoat
-            -Dsonar.java.binaries=WebGoat-main/target/classes
+            --failOnCVSS 7
+            --enableRetired
+
+      - name: Upload dependency check report
+        uses: actions/upload-artifact@v3
+        with:
+          name: dependency-check-report
+          path: reports
 
       - name: Check Quality Gate
         uses: sonarsource/sonarqube-quality-gate-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        continue-on-error: true
+        with:
+          scanMetadataReportFile: .scannerwork/report-task.txt
 
-      - name: Check for Critical Vulnerabilities and Send Discord Alert
+      - name: Send Discord Alert
+        if: failure()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          VULNERABILITIES=$(curl -s -X GET "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=WebGoat&types=VULNERABILITY&severities=CRITICAL&resolved=false" | jq '.total')
-          echo "Detected Critical Vulnerabilities: $VULNERABILITIES"
-          if [ "$VULNERABILITIES" -gt 0 ]; then
-            curl -X POST -H "Content-Type: application/json" \
-              -d '{"content": "A critical vulnerability has been detected in the WebGoat project! Total critical vulnerabilities: '"$VULNERABILITIES"'."}' \
-              ${{ secrets.DISCORD_WEBHOOK_URL }}
-          fi
+          curl -H "Content-Type: application/json" \
+          -d '{"content":"Security scan failed! Critical vulnerabilities detected."}' \
+          $DISCORD_WEBHOOK
