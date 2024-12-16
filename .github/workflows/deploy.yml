@@ -1,13 +1,8 @@
-name: Deploy to Azure VM
+name: Deployment
 
 on:
   push:
-    branches: [ main ]
-    paths:
-      - 'WebGoat-main/**'
-      - 'terraform/**'
-      - 'ansible/**'
-      - '.github/workflows/deploy.yml'
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -17,11 +12,9 @@ jobs:
     
     steps:
       - uses: actions/checkout@v3
-
-      - name: Set up Azure CLI
-        uses: azure/login@v1
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          repository: 'AhmedGafsi09/LOG8100_Projet'
+          path: 'LOG8100_Projet'
 
       - name: Set up SSH key
         run: |
@@ -30,72 +23,30 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-pip
-          pip install ansible
-          pip install openshift
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: "1.5.7"
-
-      - name: Initialize Terraform
-        run: |
-          cd terraform
-          terraform init
-          terraform validate
-
-      - name: Terraform Plan
-        run: |
-          cd terraform
-          terraform plan -out=tfplan
-        env:
-          TF_VAR_vm_ip: ${{ secrets.VM_HOST }}
-
-      - name: Terraform Apply
-        if: github.ref == 'refs/heads/main'
-        run: |
-          cd terraform
-          terraform apply tfplan
-
-      - name: Setup Kubernetes
+      - name: Configure Kubernetes
         run: |
           mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
+          scp -i ~/.ssh/id_rsa azureuser@${{ secrets.VM_HOST }}:.kube/config ~/.kube/
           chmod 600 ~/.kube/config
+          
+          # Update config with external IP
+          sed -i 's/10.0.0.4/${{ secrets.VM_HOST }}/' ~/.kube/config
+          
+          # Test connection
+          kubectl cluster-info
 
-      - name: Run Ansible Playbook
+      - name: Apply Network Policies
         run: |
-          cd ansible
-          ansible-playbook -i inventory.yml site.yml --extra-vars "host=${{ secrets.VM_HOST }}"
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "false"
+          kubectl apply -f kubernetes/calico/calico-config.yaml
+          sleep 30  # Wait for policies to be applied
+
+      - name: Deploy Application
+        run: |
+          kubectl apply -f kubernetes/deployment/
+          kubectl rollout status deployment/webgoat -n webgoat --timeout=300s
 
       - name: Verify Deployment
         run: |
-          kubectl get nodes
           kubectl get pods -n webgoat
           kubectl get services -n webgoat
-
-      - name: Run Security Checks
-        run: |
-          kubectl apply -f https://raw.githubusercontent.com/aquasecurity/kube-bench/main/job.yaml
-          kubectl wait --for=condition=complete job/kube-bench --timeout=300s
-          kubectl logs job/kube-bench
-
-      - name: Notify on Success
-        if: success()
-        uses: rtCamp/action-slack-notify@v2
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-          SLACK_MESSAGE: 'Deployment successful! 🚀'
-
-      - name: Notify on Failure
-        if: failure()
-        uses: rtCamp/action-slack-notify@v2
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-          SLACK_MESSAGE: 'Deployment failed! 🔥'
+          kubectl get networkpolicies -n webgoat
